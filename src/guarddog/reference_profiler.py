@@ -28,25 +28,34 @@ class CategoricalProfile:
     proportions: dict[str, float]
 
 
+# Backward-compatible defaults are retained for the UCI Adult benchmark.
+# Primary Telco usage should always pass an explicit dataset configuration.
+ADULT_NUMERICAL = ["age", "fnlwgt", "education_num", "capital_gain", "capital_loss", "hours_per_week"]
+ADULT_CATEGORICAL = [
+    "workclass", "education", "marital_status", "occupation", "relationship",
+    "race", "sex", "native_country", "region",
+]
+ADULT_FAIRNESS = ["age", "sex", "region"]
+
+
 class ReferenceProfiler:
     """Create a statistical baseline from a reference/training dataframe.
 
     Dataset-specific feature lists, target names, and fairness attributes are
-    supplied through configuration. The profiler itself contains no
-    dataset-specific loading or transformation logic.
+    supplied through configuration. The statistical logic remains dataset-agnostic.
     """
 
     def __init__(
         self,
-        numerical_features: list[str],
-        categorical_features: list[str],
-        fairness_attributes: list[str],
-        target: str,
+        numerical_features: list[str] | None = None,
+        categorical_features: list[str] | None = None,
+        fairness_attributes: list[str] | None = None,
+        target: str = "income",
         dataset_name: str | None = None,
     ) -> None:
-        self.numerical_features = list(numerical_features)
-        self.categorical_features = list(categorical_features)
-        self.fairness_attributes = list(fairness_attributes)
+        self.numerical_features = list(numerical_features or ADULT_NUMERICAL)
+        self.categorical_features = list(categorical_features or ADULT_CATEGORICAL)
+        self.fairness_attributes = list(fairness_attributes or ADULT_FAIRNESS)
         self.target = target
         self.dataset_name = dataset_name
 
@@ -79,13 +88,9 @@ class ReferenceProfiler:
                     count=int(series.notna().sum()),
                     missing=int(series.isna().sum()),
                     unique=int(series.nunique(dropna=True)),
-                    proportions={
-                        self._category_key(k): float(v) for k, v in proportions.items()
-                    },
+                    proportions={self._category_key(k): float(v) for k, v in proportions.items()},
                 )
             )
-
-        fairness = self._profile_fairness(df)
 
         return {
             "schema_version": "1.0",
@@ -94,7 +99,7 @@ class ReferenceProfiler:
             "target": self.target,
             "numerical": numeric,
             "categorical": categorical,
-            "fairness": fairness,
+            "fairness": self._profile_fairness(df),
         }
 
     def _profile_fairness(self, df: pd.DataFrame) -> dict[str, Any]:
@@ -118,19 +123,12 @@ class ReferenceProfiler:
                     "type": "categorical",
                     "count": int(categorical.notna().sum()),
                     "missing": int(categorical.isna().sum()),
-                    "proportions": {
-                        self._category_key(k): float(v) for k, v in counts.items()
-                    },
+                    "proportions": {self._category_key(k): float(v) for k, v in counts.items()},
                 }
         return result
 
     def _validate_columns(self, df: pd.DataFrame) -> None:
-        required = set(
-            self.numerical_features
-            + self.categorical_features
-            + self.fairness_attributes
-            + [self.target]
-        )
+        required = set(self.numerical_features + self.categorical_features + self.fairness_attributes + [self.target])
         missing = sorted(required - set(df.columns))
         if missing:
             raise ValueError(f"Reference data is missing required columns: {missing}")
