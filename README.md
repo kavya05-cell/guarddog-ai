@@ -8,7 +8,7 @@ The project is deliberately designed as a **modular MVP plus research-extension 
 
 ## Project Status
 
-**Phase:** Project initialization and specification capture  
+**Phase:** Dataset selection and Reference Profiling setup  
 **Implementation window:** 17 August 2026 – 6 November 2026
 
 ## Core Modules
@@ -51,6 +51,43 @@ The MVP includes **Demographic Parity** auditing across:
 
 Fairness results must be interpreted with subgroup sample size in mind. Additional fairness criteria such as Equal Opportunity, Equalized Odds, Disparate Impact, calibration, and intersectional analysis are planned extensions.
 
+## Dataset Strategy
+
+GuardDog uses a **primary dataset + benchmark datasets + controlled synthetic scenarios** rather than forcing every experiment into one dataset.
+
+### Primary dataset — IBM Telco Customer Churn
+
+The Telco Customer Churn dataset is the primary end-to-end demonstration dataset. It supports a customer-churn prediction use case and provides numerical, categorical, demographic, service, and location information suitable for the GuardDog requirements.
+
+The primary dataset will be used for:
+
+- ML model training;
+- reference profiling;
+- production-like drift simulation;
+- KS/PSI/Chi-Squared monitoring;
+- demographic fairness monitoring; and
+- dashboard/report demonstrations.
+
+`region` will be an explicitly documented engineered attribute derived from the dataset's available geographic information. The raw source schema will not be misrepresented as already containing a native `region` field.
+
+### Secondary benchmark — UCI Adult
+
+Adult is retained as a **fairness benchmark**, not the primary project dataset. It is useful for validating demographic-parity behavior on an established classification dataset.
+
+### Secondary benchmark — South German Credit
+
+South German Credit is retained as a **credit-risk benchmark** to test the monitoring components on a second business domain.
+
+### Controlled validation — Synthetic data
+
+Synthetic scenarios will be used to inject known changes into the reference distribution, including stable data, small drift, major drift, categorical drift, and controlled fairness deviations. This gives the project a known ground truth for detector validation.
+
+### Dataset architecture principle
+
+The Reference Profiler and future monitoring components must be **dataset-agnostic**. Dataset-specific loading, cleaning, and feature mapping belongs in dataset adapters/configuration rather than inside the statistical engines.
+
+Raw datasets are not committed to Git. See `data/README.md` for the local data policy.
+
 ## Drift Scope & Limitations
 
 GuardDog distinguishes among:
@@ -76,19 +113,6 @@ The research roadmap includes:
 
 These are **not MVP claims** unless implemented and tested.
 
-## Initial Dataset Requirements
-
-The selected tabular dataset must contain:
-
-- numerical features;
-- categorical features;
-- a target variable;
-- age;
-- gender; and
-- region.
-
-Candidate domains in the project specification include financial credit scoring and customer churn. Research references additionally suggest benchmark datasets such as UCI Adult, COMPAS, German Credit, Electricity Pricing, and controlled synthetic streams.
-
 ## Repository Structure
 
 ```text
@@ -99,8 +123,12 @@ guarddog-ai/
 │   ├── architecture.md
 │   └── roadmap.md
 ├── src/
+│   └── guarddog/
 ├── tests/
 ├── data/
+│   ├── README.md
+│   ├── raw/          # local, gitignored
+│   └── processed/    # local, gitignored
 ├── notebooks/
 ├── reports/
 ├── requirements.txt
