@@ -150,20 +150,42 @@ The initial implementation may use demographic-parity differences as the primary
 
 Fairness measurements must also account for subgroup sample sizes. When subgroup evidence is insufficient, the result should be marked accordingly rather than treated as a definitive disparity conclusion.
 
-## 8. Dataset Requirements
+## 8. Dataset Strategy
 
-The initial dataset must be tabular and contain:
+GuardDog uses a **primary dataset + benchmark datasets + controlled synthetic scenarios**.
 
-- numerical features;
-- categorical features;
-- a target variable;
-- age;
-- gender; and
-- region.
+### 8.1 Primary dataset — IBM Telco Customer Churn
 
-The supplied project specification identifies **financial credit scoring** and **customer churn** as candidate domains.
+The IBM Telco Customer Churn dataset is the primary end-to-end demonstration dataset. It is selected because the project needs a realistic tabular classification problem with numerical and categorical features, a churn target, demographic attributes, and geographic information suitable for the GuardDog monitoring workflow.
 
-The research review additionally identifies UCI Adult, COMPAS, German Credit, Electricity Pricing, Airline Delay, and controlled synthetic streams as useful benchmark sources. Dataset selection remains a separate decision before implementation because the schema will influence profiling, drift simulation, fairness analysis, and model experiments.
+The primary dataset will be used for:
+
+- ML model training;
+- reference profiling;
+- production-like drift simulation;
+- KS/PSI/Chi-Squared monitoring;
+- demographic fairness monitoring; and
+- dashboard/report demonstrations.
+
+The logical `region` field will be an explicitly documented engineered attribute derived from the source location information if the selected source files do not provide a native region field. The raw source schema must never be misrepresented.
+
+### 8.2 Secondary benchmark — UCI Adult
+
+UCI Adult is retained primarily as a fairness benchmark. It is not the primary end-to-end dataset. It can be used to validate demographic-parity behavior on an established classification benchmark.
+
+### 8.3 Secondary benchmark — South German Credit
+
+South German Credit is retained as a credit-risk-domain benchmark for validating the monitoring components on a second business domain.
+
+### 8.4 Controlled validation — Synthetic data
+
+Synthetic scenarios will be generated from the primary reference data to create known conditions including no drift, small drift, major drift, categorical drift, gradual drift, sudden drift, and controlled fairness deviations. This provides known ground truth for detector validation.
+
+### 8.5 Dataset-agnostic architecture
+
+Statistical engines must not contain dataset-specific logic. Loading, cleaning, feature mapping, target definitions, and engineered attributes belong in dataset adapters/configuration. See `docs/dataset-strategy.md`.
+
+Raw datasets are not committed to Git. Local data storage is documented separately.
 
 ## 9. Expected Technical Stack
 
@@ -199,7 +221,7 @@ Research extensions will be scheduled only after the MVP is stable.
 
 The initial implementation should ultimately demonstrate that:
 
-- a reference baseline can be generated from the selected dataset;
+- a reference baseline can be generated from the selected primary dataset;
 - simulated production data can be compared with that baseline;
 - KS and PSI results are calculated according to the defined thresholds;
 - categorical drift can be evaluated with Chi-Squared testing;
@@ -207,6 +229,7 @@ The initial implementation should ultimately demonstrate that:
 - insufficient sample sizes are surfaced rather than hidden;
 - zero-frequency bins do not cause PSI calculation failures;
 - demographic parity is audited for Age, Gender, and Region;
+- benchmark datasets can be used without rewriting the statistical engines;
 - findings are visible in an interactive dashboard; and
 - a PDF Model Health Certificate can be generated from the analysis results.
 
