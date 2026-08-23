@@ -10,13 +10,22 @@ The roadmap preserves the original project window while separating the **MVP req
 
 **17–28 August 2026**
 
-Goal: select the dataset, validate its schema, and establish the statistical reference baseline.
+### Dataset decision
+
+- **Primary:** IBM Telco Customer Churn
+- **Fairness benchmark:** UCI Adult
+- **Credit-risk benchmark:** South German Credit
+- **Controlled validation:** synthetic scenarios generated from the primary reference data
+
+Goal: validate the primary dataset schema and establish the statistical reference baseline.
 
 Deliverables:
 
-- selected tabular dataset;
+- selected primary dataset;
+- documented benchmark strategy;
 - numerical and categorical feature inventory;
 - target and sensitive-attribute validation;
+- documented region mapping/engineering where required;
 - reference distributions;
 - variance/statistical summaries; and
 - demographic ratios required by downstream analysis.
@@ -54,7 +63,7 @@ Deliverables:
 
 **28 September – 9 October 2026**
 
-Goal: create controlled production-like scenarios and validate detector behavior.
+Goal: create controlled production-like scenarios and validate detector behavior across the primary dataset and selected benchmarks.
 
 Scenarios should include:
 
@@ -138,18 +147,19 @@ These are intentionally **not prerequisites for the initial MVP**.
 
 The MVP is complete only when the system can reproducibly:
 
-1. profile a selected reference dataset;
+1. profile the selected primary reference dataset;
 2. validate the dataset schema and evidence size;
 3. compare production-like data with the reference;
 4. run KS/PSI for numerical features;
 5. run Chi-Squared/PSI for categorical features where appropriate;
 6. apply the configured multiple-testing correction;
 7. audit Demographic Parity for Age, Gender, and Region;
-8. simulate controlled drift/fairness scenarios;
-9. display results in Streamlit;
-10. generate a Model Health Certificate; and
-11. pass automated tests for the complete workflow.
+8. run controlled drift/fairness scenarios;
+9. validate benchmark datasets without rewriting statistical engines;
+10. display results in Streamlit;
+11. generate a Model Health Certificate; and
+12. pass automated tests for the complete workflow.
 
 ## Immediate Next Step
 
-The project is still in initialization. **Do not start with advanced drift algorithms.** The immediate next engineering task is to select and validate the dataset, then implement the Reference Profiler against that schema.
+The dataset strategy is now defined. The immediate engineering task is to **obtain and inspect the primary IBM Telco Customer Churn data**, record its exact source schema, define the logical GuardDog feature mapping, and then implement the Reference Profiler against that configuration.
