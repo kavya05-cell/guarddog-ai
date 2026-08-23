@@ -9,30 +9,6 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_NUMERICAL_FEATURES = [
-    "age",
-    "fnlwgt",
-    "education_num",
-    "capital_gain",
-    "capital_loss",
-    "hours_per_week",
-]
-
-DEFAULT_CATEGORICAL_FEATURES = [
-    "workclass",
-    "education",
-    "marital_status",
-    "occupation",
-    "relationship",
-    "race",
-    "sex",
-    "native_country",
-    "region",
-]
-
-DEFAULT_FAIRNESS_ATTRIBUTES = ["age", "sex", "region"]
-
-
 @dataclass(frozen=True)
 class NumericProfile:
     count: int
@@ -55,22 +31,24 @@ class CategoricalProfile:
 class ReferenceProfiler:
     """Create a statistical baseline from a reference/training dataframe.
 
-    The profiler deliberately stores descriptive statistics rather than model
-    parameters. Drift detectors can consume this baseline without depending
-    on a specific predictive model implementation.
+    Dataset-specific feature lists, target names, and fairness attributes are
+    supplied through configuration. The profiler itself contains no
+    dataset-specific loading or transformation logic.
     """
 
     def __init__(
         self,
-        numerical_features: list[str] | None = None,
-        categorical_features: list[str] | None = None,
-        fairness_attributes: list[str] | None = None,
-        target: str = "income",
+        numerical_features: list[str],
+        categorical_features: list[str],
+        fairness_attributes: list[str],
+        target: str,
+        dataset_name: str | None = None,
     ) -> None:
-        self.numerical_features = numerical_features or DEFAULT_NUMERICAL_FEATURES.copy()
-        self.categorical_features = categorical_features or DEFAULT_CATEGORICAL_FEATURES.copy()
-        self.fairness_attributes = fairness_attributes or DEFAULT_FAIRNESS_ATTRIBUTES.copy()
+        self.numerical_features = list(numerical_features)
+        self.categorical_features = list(categorical_features)
+        self.fairness_attributes = list(fairness_attributes)
         self.target = target
+        self.dataset_name = dataset_name
 
     def fit(self, df: pd.DataFrame) -> dict[str, Any]:
         """Profile ``df`` and return a JSON-serializable baseline."""
@@ -102,8 +80,7 @@ class ReferenceProfiler:
                     missing=int(series.isna().sum()),
                     unique=int(series.nunique(dropna=True)),
                     proportions={
-                        self._category_key(k): float(v)
-                        for k, v in proportions.items()
+                        self._category_key(k): float(v) for k, v in proportions.items()
                     },
                 )
             )
@@ -112,6 +89,7 @@ class ReferenceProfiler:
 
         return {
             "schema_version": "1.0",
+            "dataset": self.dataset_name,
             "row_count": int(len(df)),
             "target": self.target,
             "numerical": numeric,
@@ -122,25 +100,24 @@ class ReferenceProfiler:
     def _profile_fairness(self, df: pd.DataFrame) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for attribute in self.fairness_attributes:
-            if attribute == "age":
-                # Age is continuous in the source dataset. Store summary stats
-                # and leave demographic bucketing to the fairness configuration.
-                series = pd.to_numeric(df[attribute], errors="coerce")
+            series = df[attribute]
+            if pd.api.types.is_numeric_dtype(series):
+                numeric = pd.to_numeric(series, errors="coerce")
                 result[attribute] = {
                     "type": "numeric",
-                    "count": int(series.notna().sum()),
-                    "missing": int(series.isna().sum()),
-                    "mean": float(series.mean()),
-                    "min": float(series.min()),
-                    "max": float(series.max()),
+                    "count": int(numeric.notna().sum()),
+                    "missing": int(numeric.isna().sum()),
+                    "mean": float(numeric.mean()) if numeric.notna().any() else None,
+                    "min": float(numeric.min()) if numeric.notna().any() else None,
+                    "max": float(numeric.max()) if numeric.notna().any() else None,
                 }
             else:
-                series = df[attribute].astype("string")
-                counts = series.value_counts(normalize=True, dropna=False)
+                categorical = series.astype("string")
+                counts = categorical.value_counts(normalize=True, dropna=False)
                 result[attribute] = {
                     "type": "categorical",
-                    "count": int(series.notna().sum()),
-                    "missing": int(series.isna().sum()),
+                    "count": int(categorical.notna().sum()),
+                    "missing": int(categorical.isna().sum()),
                     "proportions": {
                         self._category_key(k): float(v) for k, v in counts.items()
                     },
@@ -148,7 +125,12 @@ class ReferenceProfiler:
         return result
 
     def _validate_columns(self, df: pd.DataFrame) -> None:
-        required = set(self.numerical_features + self.categorical_features + self.fairness_attributes + [self.target])
+        required = set(
+            self.numerical_features
+            + self.categorical_features
+            + self.fairness_attributes
+            + [self.target]
+        )
         missing = sorted(required - set(df.columns))
         if missing:
             raise ValueError(f"Reference data is missing required columns: {missing}")
