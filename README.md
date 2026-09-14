@@ -1,14 +1,14 @@
 # GuardDog AI
 
-## Simple ML Data Drift Monitoring Pipeline
+## Real-Time ML Data Drift Monitoring Pipeline
 
 Machine-learning models are trained on historical data, but the data they receive after deployment can change. Customer behavior, service usage, demographics, and other feature distributions may shift over time.
 
-The model can continue returning predictions without any software failure while its input data becomes different from the data used as its reference. This is **data drift**.
+The model can continue running without any software failure while its input data becomes different from the data used as its reference. This is **data drift**.
 
-> **GuardDog AI compares new data with a trusted reference baseline and identifies distribution changes that require investigation.**
+> **GuardDog AI compares trusted reference data with incoming streaming data and identifies distribution changes that require investigation.**
 
-The internship version is intentionally kept simple: a small, modular, end-to-end monitoring pipeline rather than a large MLOps platform.
+The internship version is intentionally focused: a small, modular, end-to-end drift monitoring system using **Apache Kafka** for real-time data ingestion, statistical drift detection, and a simple Streamlit dashboard.
 
 ---
 
@@ -18,35 +18,51 @@ Traditional ML evaluation usually happens before deployment on a fixed test set.
 
 > **Has the data arriving now changed compared with the reference data?**
 
-For example:
+For example, a model may have been trained when most customers had moderate monthly charges. Months later, customer behavior may change and incoming charges may become substantially higher.
 
-```text
-Reference data
-Age 25–35: 40%
-Age 36–50: 45%
-Age 51+:   15%
+The software can still run normally. The problem is that the **data distribution has changed**.
 
-Production-like data
-Age 25–35: 20%
-Age 36–50: 40%
-Age 51+:   40%
-```
-
-The incoming population has changed. GuardDog provides a statistical way to detect that change.
+GuardDog addresses this problem by continuously consuming incoming data and comparing it with a trusted reference baseline.
 
 ---
 
 ## 2. What Is Data Drift?
 
-**Data drift** is a change in the statistical distribution of data over time.
+**Data drift** is a change in the statistical distribution of input data over time.
 
 It can affect numerical features such as `Age`, `Tenure in Months`, and `Monthly Charge`, or categorical features such as `Gender`, `Contract`, and `Internet Service`.
 
-GuardDog does not treat every change as a model failure. It identifies statistically meaningful changes so that they can be investigated.
+GuardDog does not treat every change as a model failure. It identifies statistically meaningful distribution changes so that they can be investigated.
 
 ---
 
-## 3. Reference Baseline
+## 3. Why Real-Time Monitoring?
+
+A static comparison can tell us that two datasets are different, but deployed systems receive data continuously.
+
+GuardDog therefore uses **Apache Kafka** as the streaming layer.
+
+```text
+Incoming Data
+      ↓
+Kafka Producer
+      ↓
+Kafka Topic
+      ↓
+Kafka Consumer
+      ↓
+Incoming Batch
+      ↓
+Drift Detector
+```
+
+The consumer collects incoming records into small batches and evaluates them against the reference baseline. This provides a practical real-time/streaming monitoring workflow without introducing a large distributed processing platform.
+
+The project does not use Kafka for model training or automatic retraining. Kafka is used specifically to provide a continuous stream of incoming data to the monitoring pipeline.
+
+---
+
+## 4. Reference Baseline
 
 Before drift can be detected, GuardDog needs to define what normal data looks like.
 
@@ -58,66 +74,61 @@ Reference Profiler
 Statistical Baseline
 ```
 
-The baseline stores information such as numerical statistics, categorical proportions, and missingness information.
+The reference profile stores information such as numerical statistics, categorical proportions, and missingness information.
 
-Future production-like data is compared against this baseline.
+Incoming Kafka data is compared against this trusted reference.
 
 ---
 
-## 4. GuardDog AI Solution
+## 5. GuardDog AI Solution
 
 The core system follows this flow:
 
 ```text
-                RAW DATA
-                    ↓
-            +----------------+
-            |  Preprocessing |
-            +--------+-------+
-                     ↓
-              Clean Dataset
-                     ↓
-            +----------------+
-            | Reference      |
-            | Profiler       |
-            +--------+-------+
-                     ↓
-             Reference Profile
-                     ↓
-        +------------+------------+
-        ↓                         ↓
- Reference Data            Production-like Data
-        |                         |
-        +------------+------------+
-                     ↓
-            +----------------+
-            | Drift Detector |
-            |                |
-            | KS             |
-            | PSI            |
-            | Chi-Square     |
-            +--------+-------+
-                     ↓
-               Drift Results
-                     ↓
-            +----------------+
-            | Streamlit      |
-            | Dashboard      |
-            +----------------+
+                    SOURCE DATA
+                         ↓
+                 Data Reconstruction
+                         ↓
+                   Preprocessing
+                         ↓
+                Clean Reference Data
+                         ↓
+                 Reference Profiler
+                         ↓
+                Reference Profile
+                         │
+                         │
+                         ▼
+                  ┌─────────────┐
+                  │ Kafka Topic │
+                  └──────┬──────┘
+                         ↓
+                  Kafka Consumer
+                         ↓
+                   Incoming Batch
+                         ↓
+                  Drift Detector
+                  /      |       \
+                KS      PSI     Chi-Square
+                  \      |       /
+                   \     |      /
+                    Drift Results
+                         ↓
+                 Streamlit Dashboard
 ```
 
 The system answers four simple questions:
 
-1. What did the reference data look like?
-2. What does the new data look like?
-3. Are the distributions different?
+1. What did the trusted reference data look like?
+2. What data is arriving now?
+3. Are the incoming distributions different?
 4. Which features require attention?
 
 ---
 
-## 5. Project Scope
+## 6. Project Scope
 
-The internship MVP contains only the components required to demonstrate the central drift-monitoring objective.
+The internship MVP contains only the components required to demonstrate real-time data drift monitoring.
 
 ### Core scope
 
@@ -125,10 +136,12 @@ The internship MVP contains only the components required to demonstrate the cent
 1. Dataset reconstruction and validation
 2. Data preprocessing
 3. Reference profiling
-4. Drift detection
-5. Controlled drift simulation
-6. Simple Streamlit dashboard
-7. Automated tests and documentation
+4. Kafka-based real-time data ingestion
+5. Streaming batch construction
+6. Statistical drift detection
+7. Controlled drift simulation
+8. Simple Streamlit dashboard
+9. Automated tests and documentation
 ```
 
 ### Drift methods
@@ -139,15 +152,26 @@ The internship MVP contains only the components required to demonstrate the cent
 | **Population Stability Index (PSI)** | Numerical / binned distributions | Measure distribution-shift magnitude |
 | **Chi-Square** | Categorical | Detect differences in categorical distributions |
 
+### Streaming technology
+
+| Technology | Purpose |
+|---|---|
+| **Apache Kafka** | Real-time event/data streaming |
+| **Kafka Producer** | Sends incoming customer records to a Kafka topic |
+| **Kafka Consumer** | Receives records from the topic |
+| **Batch Builder** | Groups incoming records before drift evaluation |
+
 ### Deliberately excluded from the MVP
 
 To keep the project maintainable and achievable within the internship timeline, the MVP does not require:
 
-- Online learning
+- Online model learning
 - Adaptive classifier ensembles
 - Automatic model retraining
-- Complex MLOps infrastructure
+- Kafka Streams or complex distributed processing
+- Spark or Flink
 - Cloud deployment
+- Kubernetes
 - Large multi-dataset benchmarking
 - Advanced multivariate drift detection
 - Complex fairness frameworks
@@ -157,9 +181,9 @@ These are future-scope possibilities, not implementation requirements.
 
 ---
 
-## 6. Drift Detection
+## 7. Drift Detection
 
-### 6.1 Kolmogorov-Smirnov Test
+### 7.1 Kolmogorov-Smirnov Test
 
 The KS test compares two numerical distributions and produces a test statistic and p-value.
 
@@ -167,15 +191,15 @@ Initial thresholds:
 
 | p-value | Classification |
 |---:|---|
-| `p >= 0.05` | No warning |
+| `p >= 0.05` | Stable |
 | `p < 0.05` | Warning |
-| `p < 0.01` | Strict Alert |
+| `p < 0.01` | Alert |
 
 The p-value describes statistical evidence of a difference; it does not by itself describe practical importance.
 
-### 6.2 Population Stability Index
+### 7.2 Population Stability Index
 
-PSI compares the proportions of observations in defined bins or categories between reference and current data.
+PSI compares the proportions of observations in defined bins between reference and current data.
 
 Initial thresholds:
 
@@ -183,7 +207,7 @@ Initial thresholds:
 |---:|---|
 | `< 0.10` | Stable |
 | `0.10–0.25` | Warning |
-| `> 0.25` | Action Required |
+| `> 0.25` | Alert |
 
 A small epsilon is used to protect calculations when a bin has zero frequency:
 
@@ -191,7 +215,7 @@ A small epsilon is used to protect calculations when a bin has zero frequency:
 ε = 1 × 10⁻⁸
 ```
 
-### 6.3 Chi-Square Test
+### 7.3 Chi-Square Test
 
 The Chi-Square test is used for categorical features. It determines whether the observed categorical distribution differs significantly from the reference distribution.
 
@@ -203,11 +227,11 @@ PSI         → practical magnitude of distribution movement
 Chi-Square  → statistical evidence for categorical drift
 ```
 
-Together, they provide a simple but useful initial drift-monitoring layer.
+Together, they provide a simple and complementary initial drift-monitoring layer.
 
 ---
 
-## 7. Primary Dataset
+## 8. Primary Dataset
 
 GuardDog uses the **IBM Telco Customer Churn** dataset as its primary end-to-end dataset.
 
@@ -240,7 +264,7 @@ data/processed/telco_merged_raw.csv
 
 ---
 
-## 8. Data Preprocessing
+## 9. Data Preprocessing
 
 The preprocessing stage converts the reconstructed data into a validated monitoring dataset.
 
@@ -266,9 +290,116 @@ data/processed/telco_clean.csv
 
 ---
 
-## 9. Full Architecture
+## 10. Real-Time Kafka Architecture
 
-GuardDog follows a simple sequential architecture:
+Kafka provides the connection between continuously arriving data and the GuardDog detection engine.
+
+```text
+┌─────────────────────┐
+│   Data Source       │
+│ Telco / Simulation  │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│   Kafka Producer    │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│   Kafka Topic       │
+│    telco-data       │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│   Kafka Consumer    │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│   Batch Builder     │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│  GuardDog Drift     │
+│      Detector       │
+│                     │
+│ KS | PSI | Chi²     │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│   Drift Results     │
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│ Streamlit Dashboard │
+└─────────────────────┘
+```
+
+### Streaming behavior
+
+Incoming records are not evaluated one-by-one because individual observations are generally insufficient for reliable distribution comparison.
+
+Instead, GuardDog collects a configurable number of records into a batch:
+
+```text
+Record → Record → Record → ... → Record
+                         ↓
+                    Batch of N
+                         ↓
+                  Drift Detection
+                         ↓
+                    New Batch
+```
+
+This allows the statistical methods to operate on meaningful samples while still providing continuous monitoring.
+
+### Dynamic drift demonstration
+
+The streaming experiment will demonstrate drift appearing over time:
+
+```text
+Batch 1 → Normal → Stable
+Batch 2 → Normal → Stable
+Batch 3 → Normal → Stable
+Batch 4 → Shifted → Warning
+Batch 5 → Shifted → Alert
+```
+
+The exact classification depends on the configured statistical thresholds and observed distributions.
+
+---
+
+## 11. Controlled Drift Simulation
+
+A drift detector needs a controlled experiment where the expected change is known.
+
+GuardDog creates production-like streaming data by modifying selected feature distributions before sending records through Kafka.
+
+Example:
+
+```text
+Normal Records
+      ↓
+Kafka
+      ↓
+Stable batches
+      ↓
+Controlled distribution shift
+      ↓
+Kafka
+      ↓
+Drifted batches
+      ↓
+KS / PSI / Chi-Square
+      ↓
+Warning / Alert
+```
+
+The controlled experiment allows the implementation to be validated without requiring a real production environment.
+
+The original reference dataset remains unchanged.
+
+---
+
+## 12. Full Architecture
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -278,14 +409,12 @@ GuardDog follows a simple sequential architecture:
                               ↓
 ┌──────────────────────────────────────────────────────────────┐
 │                 DATASET RECONSTRUCTION                       │
-│  Validate Customer IDs → Merge customer tables → Add Census  │
-│  population using Zip Code                                   │
+│  Validate Customer IDs → Merge customer tables → Population  │
 └─────────────────────────────┬────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────┐
 │                       PREPROCESSING                           │
 │  Validation → Leakage removal → Missing-value handling       │
-│  → Clean monitoring dataset                                  │
 └─────────────────────────────┬────────────────────────────────┘
                               ↓
                     ┌───────────────────┐
@@ -293,36 +422,45 @@ GuardDog follows a simple sequential architecture:
                     │      DATASET      │
                     └─────────┬─────────┘
                               ↓
-┌──────────────────────────────────────────────────────────────┐
-│                     REFERENCE PROFILER                        │
-│  Numerical statistics | Category proportions | Missingness  │
-└─────────────────────────────┬────────────────────────────────┘
+                    ┌───────────────────┐
+                    │ Reference Profiler│
+                    └─────────┬─────────┘
                               ↓
                     ┌───────────────────┐
-                    │ REFERENCE PROFILE │
-                    │       JSON        │
+                    │ Reference Profile │
                     └─────────┬─────────┘
                               │
-                ┌─────────────┴─────────────┐
-                ↓                           ↓
-        REFERENCE DATA              PRODUCTION-LIKE DATA
-                │                           │
-                └─────────────┬─────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────┐
-│                       DRIFT DETECTOR                         │
-│               KS | PSI | Chi-Square                          │
-│               ↓                                               │
-│          Drift score + p-value + status                      │
-└─────────────────────────────┬────────────────────────────────┘
+                              │
                               ↓
                     ┌───────────────────┐
-                    │  DRIFT RESULTS    │
+                    │ Kafka Producer    │
                     └─────────┬─────────┘
                               ↓
                     ┌───────────────────┐
-                    │ STREAMLIT         │
-                    │ DASHBOARD         │
+                    │ Kafka Topic       │
+                    │ telco-data       │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Kafka Consumer    │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Batch Builder     │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Drift Detector    │
+                    │ KS | PSI | χ²     │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Drift Results     │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Streamlit         │
+                    │ Dashboard         │
                     └───────────────────┘
 ```
 
@@ -331,15 +469,19 @@ GuardDog follows a simple sequential architecture:
 | Component | Responsibility |
 |---|---|
 | **Dataset Reconstruction** | Safely combines the Telco source tables |
-| **Preprocessing** | Produces a clean and validated dataset |
-| **Reference Profiler** | Defines the baseline distribution |
-| **Drift Detector** | Compares reference and production-like data |
-| **Dashboard** | Presents results in an understandable form |
-| **Tests** | Verify that each component behaves correctly |
+| **Preprocessing** | Produces a clean and validated reference dataset |
+| **Reference Profiler** | Defines the trusted baseline distribution |
+| **Kafka Producer** | Publishes incoming records to the streaming topic |
+| **Kafka Topic** | Buffers the incoming data stream |
+| **Kafka Consumer** | Receives incoming records |
+| **Batch Builder** | Groups records into statistically useful batches |
+| **Drift Detector** | Compares incoming batches with the reference |
+| **Dashboard** | Presents current drift status and feature-level results |
+| **Tests** | Verify component and end-to-end behavior |
 
 ---
 
-## 10. Repository Structure
+## 13. Repository Structure
 
 ```text
 guarddog-ai/
@@ -359,7 +501,9 @@ guarddog-ai/
 │   │
 │   └── processed/
 │       ├── telco_merged_raw.csv
-│       └── telco_clean.csv
+│       ├── telco_clean.csv
+│       ├── reference_profile.json
+│       └── drift_report.json
 │
 ├── src/
 │   ├── data/
@@ -374,9 +518,17 @@ guarddog-ai/
 │   │   ├── __init__.py
 │   │   └── profiler.py
 │   │
-│   └── drift/
+│   ├── drift/
+│   │   ├── __init__.py
+│   │   ├── detector.py
+│   │   ├── report.py
+│   │   └── simulator.py
+│   │
+│   └── streaming/
 │       ├── __init__.py
-│       └── detector.py
+│       ├── producer.py
+│       ├── consumer.py
+│       └── batch_builder.py
 │
 ├── dashboard/
 │   └── app.py
@@ -384,7 +536,8 @@ guarddog-ai/
 ├── tests/
 │   ├── test_preprocessing.py
 │   ├── test_profiler.py
-│   └── test_drift.py
+│   ├── test_drift.py
+│   └── test_streaming.py
 │
 ├── notebooks/
 │   └── experiments/
@@ -403,14 +556,15 @@ guarddog-ai/
 | Path | Purpose |
 |---|---|
 | `data/raw/` | Original source datasets |
-| `data/processed/` | Reconstructed and cleaned datasets |
+| `data/processed/` | Reconstructed, cleaned, and generated datasets |
 | `src/data/` | Dataset reconstruction |
 | `src/preprocessing/` | Data cleaning and validation |
 | `src/profiler/` | Reference baseline creation |
-| `src/drift/` | Drift detection logic |
+| `src/drift/` | Statistical drift detection and controlled experiments |
+| `src/streaming/` | Kafka producer, consumer, and batch handling |
 | `dashboard/` | Streamlit presentation layer |
 | `tests/` | Automated tests |
-| `notebooks/` | Exploration and controlled experiments |
+| `notebooks/` | Exploration and experiments |
 | `reports/` | Experiment results |
 | `docs/` | Project documentation |
 
@@ -418,7 +572,7 @@ Core logic remains in `src/`; notebooks are for experimentation only.
 
 ---
 
-## 11. End-to-End Workflow
+## 14. End-to-End Workflow
 
 ```text
 1. Load Telco source tables
@@ -431,21 +585,31 @@ Core logic remains in `src/`; notebooks are for experimentation only.
              ↓
 5. Generate reference profile
              ↓
-6. Create production-like batch
+6. Start Kafka
              ↓
-7. Run KS / PSI / Chi-Square
+7. Publish incoming records
              ↓
-8. Classify drift results
+8. Consume records from Kafka
              ↓
-9. Display results in Streamlit
+9. Build an incoming batch
+             ↓
+10. Run KS / PSI / Chi-Square
+             ↓
+11. Classify drift results
+             ↓
+12. Display results in Streamlit
+             ↓
+13. Continue processing the next batch
 ```
 
-This keeps the project separated into four understandable stages:
+This keeps the project separated into five understandable stages:
 
 ```text
 Data Preparation
       ↓
 Baseline Creation
+      ↓
+Real-Time Ingestion
       ↓
 Statistical Comparison
       ↓
@@ -454,69 +618,54 @@ Visualization
 
 ---
 
-## 12. Controlled Drift Simulation
+## 15. Dashboard
 
-A drift detector needs a controlled experiment where the expected change is known.
-
-GuardDog will create production-like batches by modifying selected feature distributions.
-
-Example:
-
-```text
-Reference batch
-Age follows the reference distribution
-
-Production-like batch
-Age distribution shifted toward older customers
-
-Expected result
-Age is flagged by the drift detector
-```
-
-Controlled experiments allow the implementation to be validated without requiring a real production environment.
-
----
-
-## 13. Dashboard
-
-The dashboard is intentionally simple. Its purpose is to make statistical results understandable rather than to become a large analytics platform.
+The dashboard is intentionally simple. Its purpose is to make streaming drift results understandable rather than to become a large analytics platform.
 
 Example:
 
 ```text
 GUARDDOG AI
 
-Overall Status
+Stream Status
+ACTIVE
+
+Current Status
 DRIFT DETECTED
+
+Batches Processed: 18
 
 Feature             Method        Status
 ------------------------------------------
-Age                 KS            Alert
-Age                 PSI           Warning
-Monthly Charge      KS            Stable
+Monthly Charge      KS            Alert
+Monthly Charge      PSI           Alert
+Tenure in Months    KS            Alert
+Tenure in Months    PSI           Alert
 Contract            Chi-Square    Warning
 Gender              Chi-Square    Stable
 ```
 
-The user should be able to identify which features changed and why they were flagged without reading raw Python output.
+The dashboard should allow a user to identify the current stream status, number of processed batches, and features requiring attention.
 
 ---
 
-## 14. Interpretation and Limitations
+## 16. Interpretation and Limitations
 
 A drift alert does **not** automatically prove that the model is inaccurate.
 
-It means that the monitored data has changed according to the configured statistical method and threshold.
+It means that the monitored incoming data has changed according to the configured statistical method and threshold.
 
 Likewise, statistical significance does not automatically mean business significance. A detected change may be expected because of a legitimate business or population change.
 
-GuardDog is therefore a **monitoring and decision-support system**, not an automatic model-retraining system.
+GuardDog is therefore a **data monitoring and decision-support system**, not an automatic model-retraining system.
+
+Kafka provides the real-time ingestion layer, but the statistical detector still evaluates meaningful batches rather than individual records.
 
 The statistical methods also have limitations. KS is primarily a univariate numerical test, PSI depends on its binning scheme, and Chi-Square requires appropriate categorical data and sufficient observations.
 
 ---
 
-## 15. Current Project Status
+## 17. Current Project Status
 
 ### Completed
 
@@ -532,23 +681,33 @@ The statistical methods also have limitations. KS is primarily a univariate nume
 - Preprocessing pipeline implemented
 - Leakage and redundant fields removed
 - `telco_clean.csv` generated successfully
+- Reference profiler implemented
+- Reference profile generated
+- KS drift detection implemented
+- PSI drift detection implemented
+- Chi-Square drift detection implemented
+- Drift report generation implemented
+- Controlled numerical drift validated
+- Controlled categorical drift validated
 
 ### Current
 
-- Reference Profiler
+- Kafka streaming layer
+- Feature-selection consistency cleanup
 
 ### Next
 
-- Minimal Reference Profiler
-- Drift Detector
-- Controlled drift simulation
-- Simple Streamlit dashboard
+- Kafka producer
+- Kafka consumer
+- Streaming batch builder
+- Dynamic drift monitoring
+- Streamlit dashboard
 - Automated tests
 - Final integration and documentation
 
 ---
 
-## 16. Technology Stack
+## 18. Technology Stack
 
 | Technology | Purpose |
 |---|---|
@@ -557,33 +716,35 @@ The statistical methods also have limitations. KS is primarily a univariate nume
 | **NumPy** | Numerical operations |
 | **SciPy** | Statistical tests |
 | **scikit-learn** | Supporting ML utilities |
+| **Apache Kafka** | Real-time data streaming |
 | **Streamlit** | Dashboard |
 | **pytest** | Automated testing |
 
-The stack is intentionally small. New infrastructure should only be added when it directly supports the core objective.
+The stack is intentionally small. Kafka is the only infrastructure component added for real-time ingestion because it directly supports the project's core monitoring objective.
 
 ---
 
-## 17. Future Scope
+## 19. Future Scope
 
 Possible future extensions include:
 
 - Additional fairness metrics
 - Multivariate drift detection
-- Concept-drift detection for streaming data
+- Concept-drift detection
 - Online or continual learning
 - Model-performance monitoring when labels become available
 - Automated retraining workflows
 - Additional benchmark datasets
 - Advanced MLOps integrations
-- PDF model-health reporting
+- Kafka Streams or distributed stream processing
 - Cloud deployment
+- PDF model-health reporting
 
 These extensions are documented as future work so that the internship MVP remains focused and maintainable.
 
 ---
 
-## 18. Project Philosophy
+## 20. Project Philosophy
 
 > **The goal is a complete working monitoring system, not the maximum number of features.**
 
@@ -593,21 +754,8 @@ GuardDog prioritizes:
 - small independent modules;
 - reproducible experiments;
 - statistically grounded drift detection;
+- real-time streaming ingestion;
 - understandable results; and
-- maintainable code.
+- a maintainable implementation.
 
-The central idea is simple:
-
-```text
-Trusted Data
-     ↓
-Reference Baseline
-     ↓
-New Data
-     ↓
-Drift Detection
-     ↓
-Understandable Results
-```
-
-**GuardDog AI is a focused ML observability project designed to detect data drift clearly, simply, and reproducibly.**
+Kafka is used because real systems receive data continuously. The project deliberately avoids adding additional distributed infrastructure that is not required for the central objective.
