@@ -1,166 +1,183 @@
 # GuardDog AI
 
-## Continuous Model Integrity and Observability Pipeline
+## Simple ML Data Drift Monitoring Pipeline
 
-Machine learning does not stop being a risk once a model has been trained and deployed.
+Machine-learning models are trained on historical data, but the data they receive after deployment can change. Customer behavior, service usage, demographics, and other feature distributions may shift over time.
 
-A model learns patterns from historical data. After deployment, however, the real world keeps changing. Customer behaviour changes, populations change, products change, economic conditions change, and the way data is collected can change. As a result, the data reaching a model in production may gradually become different from the data on which the model was trained.
+The model can continue returning predictions without any software failure while its input data becomes different from the data used as its reference. This is **data drift**.
 
-The model may continue to return predictions normally. Nothing may crash. The API may still respond with a prediction for every request. Yet the model can become less reliable because the environment it is operating in has changed.
+> **GuardDog AI compares new data with a trusted reference baseline and identifies distribution changes that require investigation.**
 
-This is one of the central problems GuardDog AI is designed to address.
+The internship version is intentionally kept simple: a small, modular, end-to-end monitoring pipeline rather than a large MLOps platform.
 
 ---
 
-## 1. The Problem: Models Can Degrade Silently
+## 1. The Problem
 
-Consider a customer-churn model trained using historical customer information.
+Traditional ML evaluation usually happens before deployment on a fixed test set. Accuracy, precision, recall, and F1 describe historical model performance, but they do not continuously answer:
 
-At training time, the model may learn from a population where:
+> **Has the data arriving now changed compared with the reference data?**
 
-- customer demographics follow a particular distribution;
-- contract types occur at particular frequencies;
-- internet-service usage follows a particular pattern; and
-- customer behaviour is relatively stable.
+For example:
 
-Months later, the business may acquire a different customer population. New plans may be introduced. Customer behaviour may change. The distribution of important features can therefore shift.
+```text
+Reference data
+Age 25–35: 40%
+Age 36–50: 45%
+Age 51+:   15%
 
-The model still produces predictions, but those predictions are now being made in an environment that may no longer resemble the environment represented by its reference data.
+Production-like data
+Age 25–35: 20%
+Age 36–50: 40%
+Age 51+:   40%
+```
 
-Without monitoring, this degradation can remain invisible.
-
-### Why this is difficult
-
-Traditional machine-learning evaluation is usually performed before deployment using a fixed test set. Metrics such as accuracy, precision, recall, or F1 score tell us how the model performed on that historical evaluation data.
-
-They do not, by themselves, continuously answer:
-
-> **"Has the data arriving today changed enough that we should be concerned about the model?"**
-
-That is an observability problem.
+The incoming population has changed. GuardDog provides a statistical way to detect that change.
 
 ---
 
 ## 2. What Is Data Drift?
 
-**Data drift** means that the statistical distribution of data has changed over time.
+**Data drift** is a change in the statistical distribution of data over time.
 
-In simple terms:
+It can affect numerical features such as `Age`, `Tenure in Months`, and `Monthly Charge`, or categorical features such as `Gender`, `Contract`, and `Internet Service`.
 
-> **The data the model sees today is different from the data it learned from or was originally validated on.**
-
-For example, imagine that a model was trained when most customers were between 25 and 45 years old. If the production population later contains a much larger proportion of customers over 60, the distribution of the `Age` feature has changed.
-
-The same idea applies to numerical and categorical variables.
-
-### Reference data vs production data
-
-GuardDog AI uses two concepts:
-
-| Data | Meaning |
-|---|---|
-| **Reference data** | The trusted baseline used to represent the expected data distribution. |
-| **Production data** | New or simulated incoming data that is compared against the reference baseline. |
-
-The system asks whether the two distributions are sufficiently different to warrant attention.
+GuardDog does not treat every change as a model failure. It identifies statistically meaningful changes so that they can be investigated.
 
 ---
 
-## 3. Why Detecting Drift Is Not Enough
+## 3. Reference Baseline
 
-A statistical test can tell us that two distributions are different. But a difference is not automatically a business problem.
-
-For example, with a sufficiently large dataset, a very small change can become statistically significant even though the practical impact is negligible.
-
-This creates two different questions:
-
-1. **Is there evidence that the distributions are different?**
-2. **Is the observed change large enough to matter?**
-
-GuardDog AI therefore uses complementary drift measures rather than relying on a single number.
-
----
-
-## 4. GuardDog AI: The Solution
-
-GuardDog AI is a **continuous model integrity and observability pipeline**.
-
-Its purpose is to provide a structured way to compare a trusted reference baseline with new production-like data, identify meaningful distribution changes, audit demographic fairness, and communicate the results clearly.
-
-The high-level workflow is:
+Before drift can be detected, GuardDog needs to define what normal data looks like.
 
 ```text
-Reference / Training Data
-          |
-          v
-   Reference Profiler
-          |
-          v
-    Statistical Baseline
-          |
-          v
- Production-like Data
-          |
-          v
- Drift & Bias Engine
-          |
-     +----+----+
-     |         |
-     v         v
-   Drift    Fairness
- Detection   Audit
-     |         |
-     +----+----+
-          |
-          v
- Observability Dashboard
-          |
-          v
- Model Health Certificate
+Reference Dataset
+       ↓
+Reference Profiler
+       ↓
+Statistical Baseline
 ```
 
-The objective is not simply to say **"drift detected."**
+The baseline stores information such as numerical statistics, categorical proportions, and missingness information.
 
-The objective is to provide evidence about **what changed, how significant the change is, whether fairness indicators differ across groups, and what should receive attention.**
+Future production-like data is compared against this baseline.
 
 ---
 
-## 5. How GuardDog Detects Drift
+## 4. GuardDog AI Solution
 
-GuardDog AI uses two complementary statistical methods for the initial drift engine:
+The core system follows this flow:
 
-- **Kolmogorov–Smirnov (KS) Test**
-- **Population Stability Index (PSI)**
+```text
+                RAW DATA
+                    ↓
+            +----------------+
+            |  Preprocessing |
+            +--------+-------+
+                     ↓
+              Clean Dataset
+                     ↓
+            +----------------+
+            | Reference      |
+            | Profiler       |
+            +--------+-------+
+                     ↓
+             Reference Profile
+                     ↓
+        +------------+------------+
+        ↓                         ↓
+ Reference Data            Production-like Data
+        |                         |
+        +------------+------------+
+                     ↓
+            +----------------+
+            | Drift Detector |
+            |                |
+            | KS             |
+            | PSI            |
+            | Chi-Square     |
+            +--------+-------+
+                     ↓
+               Drift Results
+                     ↓
+            +----------------+
+            | Streamlit      |
+            | Dashboard      |
+            +----------------+
+```
 
-Using both methods helps separate statistical evidence of change from a measure of the magnitude of the distribution shift.
+The system answers four simple questions:
 
-### 5.1 Kolmogorov–Smirnov Test
+1. What did the reference data look like?
+2. What does the new data look like?
+3. Are the distributions different?
+4. Which features require attention?
 
-The **KS test** compares the distributions of two numerical samples.
+---
 
-Conceptually, it compares their cumulative distributions and measures the largest difference between them.
+## 5. Project Scope
 
-The result includes a **p-value**, which is used by GuardDog to classify the statistical evidence of distribution change.
+The internship MVP contains only the components required to demonstrate the central drift-monitoring objective.
 
-| KS p-value | GuardDog classification |
+### Core scope
+
+```text
+1. Dataset reconstruction and validation
+2. Data preprocessing
+3. Reference profiling
+4. Drift detection
+5. Controlled drift simulation
+6. Simple Streamlit dashboard
+7. Automated tests and documentation
+```
+
+### Drift methods
+
+| Method | Data | Purpose |
+|---|---|---|
+| **Kolmogorov-Smirnov (KS)** | Numerical | Detect statistical distribution differences |
+| **Population Stability Index (PSI)** | Numerical / binned distributions | Measure distribution-shift magnitude |
+| **Chi-Square** | Categorical | Detect differences in categorical distributions |
+
+### Deliberately excluded from the MVP
+
+To keep the project maintainable and achievable within the internship timeline, the MVP does not require:
+
+- Online learning
+- Adaptive classifier ensembles
+- Automatic model retraining
+- Complex MLOps infrastructure
+- Cloud deployment
+- Large multi-dataset benchmarking
+- Advanced multivariate drift detection
+- Complex fairness frameworks
+- Large reporting infrastructure
+
+These are future-scope possibilities, not implementation requirements.
+
+---
+
+## 6. Drift Detection
+
+### 6.1 Kolmogorov-Smirnov Test
+
+The KS test compares two numerical distributions and produces a test statistic and p-value.
+
+Initial thresholds:
+
+| p-value | Classification |
 |---:|---|
-| `p >= 0.05` | No standard warning from the configured KS threshold |
-| `p < 0.05` | Standard Warning |
+| `p >= 0.05` | No warning |
+| `p < 0.05` | Warning |
 | `p < 0.01` | Strict Alert |
 
-A low p-value indicates evidence against the assumption that the reference and production samples come from the same distribution.
+The p-value describes statistical evidence of a difference; it does not by itself describe practical importance.
 
-The KS test is primarily a statistical significance test. It should therefore be interpreted together with the magnitude-oriented PSI measure.
+### 6.2 Population Stability Index
 
-### 5.2 Population Stability Index
+PSI compares the proportions of observations in defined bins or categories between reference and current data.
 
-**Population Stability Index (PSI)** measures how the distribution of a variable has shifted between two populations using defined bins or categories.
-
-In simple terms, PSI asks:
-
-> **"How much has the population moved from the reference distribution to the current distribution?"**
-
-GuardDog uses the following severity thresholds:
+Initial thresholds:
 
 | PSI | Classification |
 |---:|---|
@@ -168,332 +185,429 @@ GuardDog uses the following severity thresholds:
 | `0.10–0.25` | Warning |
 | `> 0.25` | Action Required |
 
-PSI thresholds are practical heuristics rather than universal laws, so the value must be interpreted in context.
-
-### 5.3 Why GuardDog Uses KS + PSI
-
-The two metrics answer related but different questions.
-
-```text
-KS  -> Is there statistical evidence of a distribution difference?
-PSI -> How large is the observed distribution shift according to the binning scheme?
-```
-
-Together they provide a more useful monitoring signal than treating either metric as a complete answer by itself.
-
-### 5.4 Zero-Frequency Protection
-
-PSI calculations involve logarithmic terms. A bin with zero observed or expected frequency can create numerical problems.
-
-GuardDog therefore uses a small epsilon value:
+A small epsilon is used to protect calculations when a bin has zero frequency:
 
 ```text
 ε = 1 × 10⁻⁸
 ```
 
-This provides numerical protection when a frequency is zero.
+### 6.3 Chi-Square Test
+
+The Chi-Square test is used for categorical features. It determines whether the observed categorical distribution differs significantly from the reference distribution.
+
+### Why three methods?
+
+```text
+KS          → statistical evidence for numerical drift
+PSI         → practical magnitude of distribution movement
+Chi-Square  → statistical evidence for categorical drift
+```
+
+Together, they provide a simple but useful initial drift-monitoring layer.
 
 ---
 
-## 6. Fairness: A Model Can Be Stable and Still Be Unfair
+## 7. Primary Dataset
 
-Model monitoring should not focus only on whether the overall data distribution has changed.
+GuardDog uses the **IBM Telco Customer Churn** dataset as its primary end-to-end dataset.
 
-A model can appear statistically stable at the overall population level while behaving differently across demographic groups.
+The enhanced dataset is organized into five source tables:
 
-**Algorithmic fairness** concerns whether model behaviour or outcomes differ across relevant groups in ways that require investigation.
+- Demographics
+- Location
+- Population
+- Services
+- Status
 
-GuardDog AI includes **Demographic Parity auditing** across:
+The source tables are reconstructed before preprocessing.
 
-- Age
-- Gender
-- Region
+```text
+Demographics ─┐
+Location ─────┤
+Services ─────┼── Customer ID ──→ Customer Dataset
+Status ───────┘
 
-The purpose is to make demographic differences visible rather than hiding them inside an overall model-health score.
+Population ── Zip Code ──→ Customer Dataset
+```
 
-Fairness metrics should be interpreted carefully because different fairness definitions answer different questions and may have important limitations. GuardDog's initial specification uses Demographic Parity as its defined fairness measure.
+Customer-level tables are validated using one-to-one `Customer ID` relationships. Population data is joined using a many-to-one `Zip Code` relationship.
+
+The reconstructed dataset contains **7,043 customers** and is saved as:
+
+```text
+data/processed/telco_merged_raw.csv
+```
 
 ---
 
-## 7. What GuardDog Actually Monitors
+## 8. Data Preprocessing
 
-GuardDog combines several monitoring dimensions:
+The preprocessing stage converts the reconstructed data into a validated monitoring dataset.
 
-| Monitoring area | Question being asked |
+The pipeline:
+
+1. Loads the merged dataset.
+2. Normalizes common missing-value representations.
+3. Validates the churn target.
+4. Validates required monitoring fields.
+5. Removes identifiers and post-outcome leakage fields.
+6. Removes redundant constant fields.
+7. Resolves structurally missing `Internet Type` values for customers without internet service.
+8. Preserves `Offer` missingness because its meaning has not been established.
+9. Saves the cleaned dataset.
+
+Current output:
+
+```text
+data/processed/telco_clean.csv
+
+7,043 rows × 54 columns
+```
+
+---
+
+## 9. Full Architecture
+
+GuardDog follows a simple sequential architecture:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                         SOURCE DATA                           │
+│  Demographics | Location | Population | Services | Status   │
+└─────────────────────────────┬────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────┐
+│                 DATASET RECONSTRUCTION                       │
+│  Validate Customer IDs → Merge customer tables → Add Census  │
+│  population using Zip Code                                   │
+└─────────────────────────────┬────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────┐
+│                       PREPROCESSING                           │
+│  Validation → Leakage removal → Missing-value handling       │
+│  → Clean monitoring dataset                                  │
+└─────────────────────────────┬────────────────────────────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │  CLEAN REFERENCE  │
+                    │      DATASET      │
+                    └─────────┬─────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────┐
+│                     REFERENCE PROFILER                        │
+│  Numerical statistics | Category proportions | Missingness  │
+└─────────────────────────────┬────────────────────────────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ REFERENCE PROFILE │
+                    │       JSON        │
+                    └─────────┬─────────┘
+                              │
+                ┌─────────────┴─────────────┐
+                ↓                           ↓
+        REFERENCE DATA              PRODUCTION-LIKE DATA
+                │                           │
+                └─────────────┬─────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────┐
+│                       DRIFT DETECTOR                         │
+│               KS | PSI | Chi-Square                          │
+│               ↓                                               │
+│          Drift score + p-value + status                      │
+└─────────────────────────────┬────────────────────────────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │  DRIFT RESULTS    │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ STREAMLIT         │
+                    │ DASHBOARD         │
+                    └───────────────────┘
+```
+
+### Component responsibilities
+
+| Component | Responsibility |
 |---|---|
-| **Data drift** | Has the incoming data distribution changed? |
-| **Statistical significance** | Is there evidence that the observed distribution difference is unlikely to be random variation? |
-| **Shift magnitude** | Is the distribution change practically meaningful according to the configured PSI thresholds? |
-| **Fairness** | Are demographic outcome rates different across monitored groups? |
-| **Model health** | What is the overall evidence about the current state of the monitored system? |
-| **Reporting** | Can the findings be communicated and audited clearly? |
+| **Dataset Reconstruction** | Safely combines the Telco source tables |
+| **Preprocessing** | Produces a clean and validated dataset |
+| **Reference Profiler** | Defines the baseline distribution |
+| **Drift Detector** | Compares reference and production-like data |
+| **Dashboard** | Presents results in an understandable form |
+| **Tests** | Verify that each component behaves correctly |
 
 ---
 
-## 8. GuardDog AI Architecture
-
-The project is divided into four major modules.
-
-### 8.1 Reference Profiler
-
-The Reference Profiler creates the statistical baseline from trusted reference data.
-
-It records the information required for later comparisons, including feature distributions, missingness-related information, and demographic characteristics needed by downstream monitoring.
-
-The key idea is simple:
-
-> **Before we can detect change, we need to define what "normal" looks like.**
-
-### 8.2 Drift & Bias Engine
-
-The Drift & Bias Engine compares new production-like data against the reference baseline.
-
-It is responsible for:
-
-- KS testing;
-- PSI calculation;
-- severity classification;
-- numerical safeguards;
-- fairness analysis; and
-- structured monitoring results.
-
-### 8.3 Interactive Observability Dashboard
-
-A Streamlit dashboard will turn the statistical results into an interactive monitoring interface.
-
-The dashboard is intended to make it possible to quickly identify:
-
-- which features changed;
-- how severe the detected shift is;
-- which demographic groups require attention; and
-- the current model-health picture.
-
-### 8.4 Reporting Pipeline
-
-GuardDog will generate a PDF **Model Health Certificate** containing the monitoring findings.
-
-This creates an auditable output instead of leaving monitoring results trapped inside a notebook or application screen.
-
----
-
-## 9. Dataset Strategy
-
-The primary end-to-end dataset for the project is the **IBM Telco Customer Churn** dataset.
-
-It is used because it provides a practical tabular setting containing numerical and categorical customer information, a churn target, and demographic/location attributes that support the project's monitoring and fairness objectives.
-
-GuardDog is not designed around the assumption that one dataset can demonstrate every possible monitoring problem.
-
-Additional datasets and synthetic data can be used for focused experiments, such as fairness benchmarking, credit-risk scenarios, and controlled drift where the expected change is known in advance.
-
-This allows the system to be evaluated from multiple perspectives rather than overfitting the demonstration to one dataset.
-
----
-
-## 10. Why a Reference Baseline Matters
-
-Suppose we receive a new batch of 1,000 production records.
-
-Looking at that batch alone does not tell us whether the data is normal.
-
-We need something to compare it against.
-
-GuardDog therefore follows this principle:
-
-```text
-Trusted historical data
-        |
-        v
-Define expected behaviour
-        |
-        v
-Reference baseline
-        |
-        v
-Compare future batches
-        |
-        v
-Detect meaningful change
-```
-
-The quality of the monitoring system therefore depends partly on the quality and representativeness of the reference baseline.
-
----
-
-## 11. From Raw Data to Monitoring Results
-
-The implementation begins with a validated and cleaned dataset.
-
-The preprocessing stage removes identifiers and post-outcome leakage, preserves important monitoring attributes, and handles missing values according to their meaning rather than blindly replacing them.
-
-The resulting flow is:
-
-```text
-Raw Dataset
-    |
-    v
-Data Validation
-    |
-    v
-Preprocessing
-    |
-    v
-Clean Reference Dataset
-    |
-    v
-Reference Profile
-    |
-    v
-Production-like Batch
-    |
-    v
-Drift + Fairness Analysis
-    |
-    v
-Dashboard + Report
-```
-
-This separation is important because the same reference definition must be used consistently when future data is evaluated.
-
----
-
-## 12. Severity Is Not the Same as a Model Failure
-
-A GuardDog warning does **not** automatically mean that a model is broken.
-
-For example:
-
-- a feature may drift because customer behaviour genuinely changed;
-- a statistically significant change may be too small to matter operationally;
-- a large distribution shift may be expected after a business change; or
-- a fairness signal may require investigation rather than proving discrimination by itself.
-
-GuardDog is therefore an **observability and decision-support system**, not an automatic replacement for model validation, business investigation, or human governance.
-
-The monitoring result should trigger investigation and appropriate action based on context.
-
----
-
-## 13. Project Workflow
-
-The intended implementation sequence is:
-
-1. **Dataset acquisition and validation**
-2. **Data preprocessing**
-3. **Reference profiling**
-4. **Drift detection engine**
-5. **Fairness analysis**
-6. **Controlled drift simulation**
-7. **Interactive Streamlit dashboard**
-8. **PDF Model Health Certificates**
-9. **Testing and validation**
-10. **Documentation and final integration**
-
----
-
-## 14. Repository Structure
+## 10. Repository Structure
 
 ```text
 guarddog-ai/
+│
 ├── README.md
-├── docs/
-│   ├── project-specification.md
-│   ├── architecture.md
-│   ├── roadmap.md
-│   └── pre-implementation-specification.md
+├── requirements.txt
+├── .gitignore
+│
+├── data/
+│   ├── raw/
+│   │   └── telco/
+│   │       ├── demographics.csv
+│   │       ├── location.csv
+│   │       ├── population.csv
+│   │       ├── services.csv
+│   │       └── status.csv
+│   │
+│   └── processed/
+│       ├── telco_merged_raw.csv
+│       └── telco_clean.csv
+│
 ├── src/
+│   ├── data/
+│   │   └── merge_telco.py
+│   │
 │   ├── preprocessing/
 │   │   ├── __init__.py
 │   │   ├── cleaner.py
 │   │   └── pipeline.py
+│   │
 │   ├── profiler/
-│   ├── drift/
-│   ├── fairness/
-│   ├── dashboard/
-│   └── reporting/
+│   │   ├── __init__.py
+│   │   └── profiler.py
+│   │
+│   └── drift/
+│       ├── __init__.py
+│       └── detector.py
+│
+├── dashboard/
+│   └── app.py
+│
 ├── tests/
-├── data/
+│   ├── test_preprocessing.py
+│   ├── test_profiler.py
+│   └── test_drift.py
+│
 ├── notebooks/
+│   └── experiments/
+│
 ├── reports/
-├── requirements.txt
-└── .gitignore
+│   └── results/
+│
+└── docs/
+    ├── project-specification.md
+    ├── architecture.md
+    └── roadmap.md
+```
+
+### Folder responsibilities
+
+| Path | Purpose |
+|---|---|
+| `data/raw/` | Original source datasets |
+| `data/processed/` | Reconstructed and cleaned datasets |
+| `src/data/` | Dataset reconstruction |
+| `src/preprocessing/` | Data cleaning and validation |
+| `src/profiler/` | Reference baseline creation |
+| `src/drift/` | Drift detection logic |
+| `dashboard/` | Streamlit presentation layer |
+| `tests/` | Automated tests |
+| `notebooks/` | Exploration and controlled experiments |
+| `reports/` | Experiment results |
+| `docs/` | Project documentation |
+
+Core logic remains in `src/`; notebooks are for experimentation only.
+
+---
+
+## 11. End-to-End Workflow
+
+```text
+1. Load Telco source tables
+             ↓
+2. Validate IDs and relationships
+             ↓
+3. Reconstruct customer-level dataset
+             ↓
+4. Preprocess and validate data
+             ↓
+5. Generate reference profile
+             ↓
+6. Create production-like batch
+             ↓
+7. Run KS / PSI / Chi-Square
+             ↓
+8. Classify drift results
+             ↓
+9. Display results in Streamlit
+```
+
+This keeps the project separated into four understandable stages:
+
+```text
+Data Preparation
+      ↓
+Baseline Creation
+      ↓
+Statistical Comparison
+      ↓
+Visualization
 ```
 
 ---
 
-## 15. Current Implementation Status
+## 12. Controlled Drift Simulation
+
+A drift detector needs a controlled experiment where the expected change is known.
+
+GuardDog will create production-like batches by modifying selected feature distributions.
+
+Example:
+
+```text
+Reference batch
+Age follows the reference distribution
+
+Production-like batch
+Age distribution shifted toward older customers
+
+Expected result
+Age is flagged by the drift detector
+```
+
+Controlled experiments allow the implementation to be validated without requiring a real production environment.
+
+---
+
+## 13. Dashboard
+
+The dashboard is intentionally simple. Its purpose is to make statistical results understandable rather than to become a large analytics platform.
+
+Example:
+
+```text
+GUARDDOG AI
+
+Overall Status
+DRIFT DETECTED
+
+Feature             Method        Status
+------------------------------------------
+Age                 KS            Alert
+Age                 PSI           Warning
+Monthly Charge      KS            Stable
+Contract            Chi-Square    Warning
+Gender              Chi-Square    Stable
+```
+
+The user should be able to identify which features changed and why they were flagged without reading raw Python output.
+
+---
+
+## 14. Interpretation and Limitations
+
+A drift alert does **not** automatically prove that the model is inaccurate.
+
+It means that the monitored data has changed according to the configured statistical method and threshold.
+
+Likewise, statistical significance does not automatically mean business significance. A detected change may be expected because of a legitimate business or population change.
+
+GuardDog is therefore a **monitoring and decision-support system**, not an automatic model-retraining system.
+
+The statistical methods also have limitations. KS is primarily a univariate numerical test, PSI depends on its binning scheme, and Chi-Square requires appropriate categorical data and sufficient observations.
+
+---
+
+## 15. Current Project Status
 
 ### Completed
 
-- Project repository initialized
-- Project requirements captured
-- Dataset investigation completed
-- IBM-style Telco customer data selected as the primary dataset
-- Customer-level source tables validated
-- Customer records merged using one-to-one validation
-- Preprocessing design established
+- GitHub repository created
+- Project scope documented
+- Primary dataset selected
+- Telco source tables obtained
+- Source schemas inspected
+- Customer IDs validated
+- Population relationship validated
+- Dataset reconstructed successfully
+- `telco_merged_raw.csv` generated
+- Preprocessing pipeline implemented
+- Leakage and redundant fields removed
+- `telco_clean.csv` generated successfully
 
-### In Progress
-
-- Preprocessing implementation
-- Clean reference dataset generation
-
-### Upcoming
+### Current
 
 - Reference Profiler
-- Drift & Bias Engine
-- Controlled drift experiments
-- Fairness auditing
-- Streamlit observability dashboard
-- PDF Model Health Certificate
-- Automated testing and final integration
+
+### Next
+
+- Minimal Reference Profiler
+- Drift Detector
+- Controlled drift simulation
+- Simple Streamlit dashboard
+- Automated tests
+- Final integration and documentation
 
 ---
 
-## 16. Initial Acceptance Criteria
-
-The completed system should be able to demonstrate that:
-
-- a reference baseline can be generated from the selected dataset;
-- production-like data can be compared with that baseline;
-- KS and PSI results are calculated according to the configured thresholds;
-- zero-frequency bins do not cause PSI calculation failures;
-- Demographic Parity is audited for Age, Gender, and Region;
-- detected findings are presented through an interactive dashboard; and
-- a PDF Model Health Certificate can be generated from the monitoring results.
-
----
-
-## 17. Technology Stack
+## 16. Technology Stack
 
 | Technology | Purpose |
 |---|---|
-| Python | Core implementation language |
-| pandas | Data loading and transformation |
-| NumPy | Numerical computation |
-| SciPy | Statistical testing |
-| scikit-learn | Machine-learning utilities and experiments |
-| Streamlit | Interactive observability dashboard |
-| Plotly | Interactive visualizations |
-| ReportLab | PDF reporting |
-| pytest | Automated testing |
+| **Python** | Core implementation |
+| **pandas** | Data loading and transformation |
+| **NumPy** | Numerical operations |
+| **SciPy** | Statistical tests |
+| **scikit-learn** | Supporting ML utilities |
+| **Streamlit** | Dashboard |
+| **pytest** | Automated testing |
+
+The stack is intentionally small. New infrastructure should only be added when it directly supports the core objective.
+
+---
+
+## 17. Future Scope
+
+Possible future extensions include:
+
+- Additional fairness metrics
+- Multivariate drift detection
+- Concept-drift detection for streaming data
+- Online or continual learning
+- Model-performance monitoring when labels become available
+- Automated retraining workflows
+- Additional benchmark datasets
+- Advanced MLOps integrations
+- PDF model-health reporting
+- Cloud deployment
+
+These extensions are documented as future work so that the internship MVP remains focused and maintainable.
 
 ---
 
 ## 18. Project Philosophy
 
-GuardDog AI follows a simple principle:
+> **The goal is a complete working monitoring system, not the maximum number of features.**
 
-> **A model should not be considered healthy merely because it is still running.**
+GuardDog prioritizes:
 
-A healthy production ML system should be observable.
+- clear architecture;
+- small independent modules;
+- reproducible experiments;
+- statistically grounded drift detection;
+- understandable results; and
+- maintainable code.
 
-We need to know whether the data has changed, whether those changes are statistically and practically meaningful, whether monitored demographic groups show concerning differences, and whether the evidence can be communicated clearly enough for humans to investigate and act.
+The central idea is simple:
 
-GuardDog AI is being built to make that monitoring process continuous, explainable, and auditable.
+```text
+Trusted Data
+     ↓
+Reference Baseline
+     ↓
+New Data
+     ↓
+Drift Detection
+     ↓
+Understandable Results
+```
 
----
-
-## Reference
-
-This README is the user-facing overview of the GuardDog AI project. The detailed requirements are maintained in `docs/project-specification.md` and the associated project documentation.
+**GuardDog AI is a focused ML observability project designed to detect data drift clearly, simply, and reproducibly.**
