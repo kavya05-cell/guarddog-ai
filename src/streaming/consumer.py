@@ -3,6 +3,7 @@ from datetime import datetime
 
 import pandas as pd
 from kafka import KafkaConsumer
+from kafka.serializer import Deserializer
 
 from src.drift.detector import detect_drift
 
@@ -13,13 +14,17 @@ REPORT_PATH = "data/processed/streaming_drift_report.json"
 BATCH_SIZE = 100
 EXPECTED_RECORDS = 7043
 
+class JSONDeserializer(Deserializer):
+    def deserialize(self, topic, headers, data):
+        return json.loads(data.decode("utf-8"))
+
 consumer = KafkaConsumer(
     TOPIC_NAME,
     bootstrap_servers=KAFKA_SERVER,
     auto_offset_reset="earliest",
     enable_auto_commit=True,
-    group_id="guarddog-drift-consumer-v2",
-    value_deserializer=lambda value: json.loads(value.decode("utf-8"))
+    group_id="guarddog-drift-consumer-v3",
+    value_deserializer=JSONDeserializer()
 )
 
 reference_df = pd.read_csv(REFERENCE_DATASET)

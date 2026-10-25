@@ -1,12 +1,26 @@
 import json
+import os
 import time
 
-import pandas as pd
+from dotenv import load_dotenv
 from kafka import KafkaProducer
 
-DATASET_PATH = "data/processed/telco_drifted.csv"
+from src.streaming.simulator import stream_records
+
+load_dotenv()
+
 KAFKA_SERVER = "localhost:9092"
 TOPIC_NAME = "guarddog-telco-drifted"
+DATA_SOURCE = os.getenv("DATA_SOURCE", "telco")
+
+DATASETS = {
+    "telco": "data/processed/telco_drifted.csv"
+}
+
+if DATA_SOURCE not in DATASETS:
+    raise ValueError(f"Unsupported DATA_SOURCE: {DATA_SOURCE}")
+
+DATASET_PATH = DATASETS[DATA_SOURCE]
 RECORD_DELAY = 0.05
 
 producer = KafkaProducer(
@@ -14,14 +28,15 @@ producer = KafkaProducer(
     value_serializer=lambda value: json.dumps(value).encode("utf-8")
 )
 
-data = pd.read_csv(DATASET_PATH).sample(frac=1, random_state=42).reset_index(drop=True)
+total_records = 0
 
-for _, row in data.iterrows():
-    record = row.where(pd.notna(row), None).to_dict()
+for record in stream_records(DATASET_PATH):
     producer.send(TOPIC_NAME, value=record)
+    total_records += 1
     time.sleep(RECORD_DELAY)
 
 producer.flush()
 producer.close()
 
-print(f"Sent {len(data)} records to Kafka topic '{TOPIC_NAME}'.")
+print(f"Data source: {DATA_SOURCE}")
+print(f"Sent {total_records} records to Kafka topic '{TOPIC_NAME}'.")
