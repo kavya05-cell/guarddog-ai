@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pandas as pd
 from scipy.stats import chi2_contingency, ks_2samp
 
@@ -21,73 +22,118 @@ EXCLUDED_COLUMNS = {
     "Count",
     "Count_location",
     "Count_services",
-    "Count_status"
+    "Count_status",
+    "Churn Value"
 }
 
 
+def _status_from_p_value(p_value):
+    if p_value < KS_ALERT_THRESHOLD:
+        return "alert"
+    if p_value < KS_WARNING_THRESHOLD:
+        return "warning"
+    return "stable"
+
+
 def ks_test(reference, current):
-    reference = reference.dropna()
-    current = current.dropna()
+    reference = pd.to_numeric(reference, errors="coerce").dropna()
+    current = pd.to_numeric(current, errors="coerce").dropna()
+
+    if len(reference) == 0 or len(current) == 0:
+        return {
+            "statistic": None,
+            "p_value": None,
+            "status": "unavailable"
+        }
 
     statistic, p_value = ks_2samp(reference, current)
-
-    if p_value < KS_ALERT_THRESHOLD:
-        status = "alert"
-    elif p_value < KS_WARNING_THRESHOLD:
-        status = "warning"
-    else:
-        status = "stable"
 
     return {
         "statistic": float(statistic),
         "p_value": float(p_value),
-        "status": status
+        "status": _status_from_p_value(p_value)
     }
 
 
+
 def create_psi_bins(reference, bins=10):
+    reference = pd.to_numeric(reference, errors="coerce").dropna()
+
+    if reference.empty or reference.nunique() < 2:
+        return None
+
     quantiles = reference.quantile(
         [i / bins for i in range(bins + 1)]
     ).drop_duplicates()
 
-    if len(quantiles) < 3:
+    if len(quantiles) < 2:
         return None
 
-    return quantiles.tolist()
+    bin_edges = quantiles.to_numpy(dtype=float, copy=True)
 
+    bin_edges[0] = -np.inf
+    bin_edges[-1] = np.inf
+
+    bin_edges = np.unique(bin_edges)
+
+    if len(bin_edges) < 2:
+        return None
+
+    return bin_edges.tolist()
 
 def calculate_psi(reference, current, bins=10):
-    reference = reference.dropna()
-    current = current.dropna()
+    reference = pd.to_numeric(reference, errors="coerce").dropna()
+    current = pd.to_numeric(current, errors="coerce").dropna()
+
+    if reference.empty or current.empty:
+        return {
+            "psi": None,
+            "status": "unavailable"
+        }
 
     bin_edges = create_psi_bins(reference, bins)
 
     if bin_edges is None:
+        if reference.nunique() == 1 and current.nunique() == 1:
+            if reference.iloc[0] == current.iloc[0]:
+                return {
+                    "psi": 0.0,
+                    "status": "stable"
+                }
+
         return {
-            "psi": 0.0,
-            "status": "stable"
+            "psi": None,
+            "status": "unavailable"
         }
 
-    reference_distribution = pd.cut(
+    reference_bins = pd.cut(
         reference,
         bins=bin_edges,
         include_lowest=True
-    ).value_counts(normalize=True, sort=False)
+    )
 
-    current_distribution = pd.cut(
+    current_bins = pd.cut(
         current,
         bins=bin_edges,
         include_lowest=True
-    ).value_counts(normalize=True, sort=False)
+    )
+
+    reference_distribution = reference_bins.value_counts(
+        normalize=True,
+        sort=False
+    )
+
+    current_distribution = current_bins.value_counts(
+        normalize=True,
+        sort=False
+    )
 
     reference_distribution = reference_distribution + PSI_EPSILON
     current_distribution = current_distribution + PSI_EPSILON
 
     psi = (
         (current_distribution - reference_distribution)
-        * (
-            current_distribution / reference_distribution
-        ).apply(math.log)
+        * np.log(current_distribution / reference_distribution)
     ).sum()
 
     if psi > PSI_ALERT_THRESHOLD:
@@ -104,13 +150,23 @@ def calculate_psi(reference, current, bins=10):
 
 
 def chi_square_test(reference, current):
-    reference_counts = reference.fillna("__MISSING__").value_counts()
-    current_counts = current.fillna("__MISSING__").value_counts()
+    reference = reference.fillna("__MISSING__").astype(str)
+    current = current.fillna("__MISSING__").astype(str)
+
+    reference_counts = reference.value_counts()
+    current_counts = current.value_counts()
 
     categories = sorted(
         set(reference_counts.index).union(current_counts.index),
         key=str
     )
+
+    if len(categories) < 2 or len(reference) == 0 or len(current) == 0:
+        return {
+            "statistic": None,
+            "p_value": None,
+            "status": "unavailable"
+        }
 
     reference_values = [
         reference_counts.get(category, 0)
@@ -127,19 +183,19 @@ def chi_square_test(reference, current):
         current_values
     ]
 
-    statistic, p_value, _, _ = chi2_contingency(table)
+    if sum(reference_values) == 0 or sum(current_values) == 0:
+        return {
+            "statistic": None,
+            "p_value": None,
+            "status": "unavailable"
+        }
 
-    if p_value < KS_ALERT_THRESHOLD:
-        status = "alert"
-    elif p_value < KS_WARNING_THRESHOLD:
-        status = "warning"
-    else:
-        status = "stable"
+    statistic, p_value, _, _ = chi2_contingency(table)
 
     return {
         "statistic": float(statistic),
         "p_value": float(p_value),
-        "status": status
+        "status": _status_from_p_value(p_value)
     }
 
 
@@ -163,6 +219,17 @@ def detect_drift(reference_df, current_df):
 
     for column in numerical_columns:
         if column not in current_df.columns:
+            results["numerical"][column] = {
+                "ks": {
+                    "statistic": None,
+                    "p_value": None,
+                    "status": "unavailable"
+                },
+                "psi": {
+                    "psi": None,
+                    "status": "unavailable"
+                }
+            }
             continue
 
         results["numerical"][column] = {
@@ -178,6 +245,13 @@ def detect_drift(reference_df, current_df):
 
     for column in categorical_columns:
         if column not in current_df.columns:
+            results["categorical"][column] = {
+                "chi_square": {
+                    "statistic": None,
+                    "p_value": None,
+                    "status": "unavailable"
+                }
+            }
             continue
 
         results["categorical"][column] = {

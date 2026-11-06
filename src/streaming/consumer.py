@@ -1,8 +1,9 @@
+
 import json
 from datetime import datetime
 
 import pandas as pd
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, TopicPartition
 from kafka.serializer import Deserializer
 
 from src.drift.detector import detect_drift
@@ -14,18 +15,23 @@ REPORT_PATH = "data/processed/streaming_drift_report.json"
 BATCH_SIZE = 100
 EXPECTED_RECORDS = 7043
 
+
 class JSONDeserializer(Deserializer):
     def deserialize(self, topic, headers, data):
         return json.loads(data.decode("utf-8"))
 
+
 consumer = KafkaConsumer(
-    TOPIC_NAME,
     bootstrap_servers=KAFKA_SERVER,
-    auto_offset_reset="earliest",
-    enable_auto_commit=True,
-    group_id="guarddog-drift-consumer-v3",
+    enable_auto_commit=False,
     value_deserializer=JSONDeserializer()
 )
+
+partition = TopicPartition(TOPIC_NAME, 0)
+consumer.assign([partition])
+consumer.seek(partition, 0)
+
+print("Consumer assigned to partition 0 at offset 0.", flush=True)
 
 reference_df = pd.read_csv(REFERENCE_DATASET)
 
@@ -33,6 +39,7 @@ records = []
 batch_number = 0
 total_records = 0
 report = []
+
 
 def process_batch(records, batch_number):
     current_df = pd.DataFrame(records)
@@ -74,33 +81,43 @@ def process_batch(records, batch_number):
 
     report.append(batch_report)
 
-    with open(REPORT_PATH, "w") as file:
+    with open(REPORT_PATH, "w", encoding="utf-8") as file:
         json.dump(report, file, indent=4)
 
-    print(f"\nBatch {batch_number}")
-    print(f"Records: {len(current_df)}")
-    print(f"Stable: {stable}")
-    print(f"Warning: {warning}")
-    print(f"Alert: {alert}")
-    print(f"Overall Status: {overall_status.upper()}")
+    print(f"\nBatch {batch_number}", flush=True)
+    print(f"Records: {len(current_df)}", flush=True)
+    print(f"Stable: {stable}", flush=True)
+    print(f"Warning: {warning}", flush=True)
+    print(f"Alert: {alert}", flush=True)
+    print(f"Overall Status: {overall_status.upper()}", flush=True)
 
-for message in consumer:
-    records.append(message.value)
-    total_records += 1
 
-    if len(records) == BATCH_SIZE:
+try:
+    while total_records < EXPECTED_RECORDS:
+        messages = consumer.poll(timeout_ms=1000, max_records=BATCH_SIZE)
+
+        for _, message_list in messages.items():
+            for message in message_list:
+                records.append(message.value)
+                total_records += 1
+
+                if len(records) == BATCH_SIZE:
+                    batch_number += 1
+                    process_batch(records, batch_number)
+                    records = []
+
+                if total_records >= EXPECTED_RECORDS:
+                    break
+
+            if total_records >= EXPECTED_RECORDS:
+                break
+
+    if records:
         batch_number += 1
         process_batch(records, batch_number)
-        records = []
 
-    if total_records == EXPECTED_RECORDS:
-        break
+finally:
+    consumer.close()
 
-if records:
-    batch_number += 1
-    process_batch(records, batch_number)
-
-consumer.close()
-
-print(f"\nTotal records processed: {total_records}")
-print(f"Total batches processed: {batch_number}")
+print(f"\nTotal records processed: {total_records}", flush=True)
+print(f"Total batches processed: {batch_number}", flush=True)

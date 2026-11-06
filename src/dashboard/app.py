@@ -1,12 +1,17 @@
+
 import json
-import time
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.fairness.audit import run_fairness_audit
+
+
 REPORT_PATH = Path("data/processed/streaming_drift_report.json")
+TELCO_DATA_PATH = Path("data/processed/telco_clean.csv")
+
 
 st.set_page_config(
     page_title="GuardDog AI",
@@ -21,7 +26,7 @@ def dashboard():
         st.error("Streaming drift report not found.")
         return
 
-    with open(REPORT_PATH, "r") as file:
+    with open(REPORT_PATH, "r", encoding="utf-8") as file:
         report = json.load(file)
 
     if not report:
@@ -204,7 +209,6 @@ def dashboard():
 
     for feature, tests in selected_batch["results"].get("numerical", {}).items():
         for test_name, result in tests.items():
-
             if result.get("status") != "stable":
                 selected_rows.append({
                     "Feature": feature,
@@ -219,7 +223,6 @@ def dashboard():
 
     for feature, tests in selected_batch["results"].get("categorical", {}).items():
         for test_name, result in tests.items():
-
             if result.get("status") != "stable":
                 selected_rows.append({
                     "Feature": feature,
@@ -241,6 +244,65 @@ def dashboard():
         st.success(
             "No warning or alert drift detected in this batch."
         )
+
+    st.divider()
+
+    st.header("Outcome Disparity Audit")
+
+    st.caption(
+        "This section compares observed churn outcomes across demographic "
+        "groups. It measures outcome disparities in the dataset and does "
+        "not establish whether a trained model's predictions are fair."
+    )
+
+    if not TELCO_DATA_PATH.exists():
+        st.warning("Cleaned Telco dataset not found.")
+    else:
+        try:
+            fairness_df = pd.read_csv(TELCO_DATA_PATH)
+            fairness_results = run_fairness_audit(fairness_df)
+
+            overall_churn_rate = fairness_df["Churn Value"].mean() * 100
+
+            fairness_col1, fairness_col2 = st.columns(2)
+
+            fairness_col1.metric(
+                "Customers Audited",
+                f"{len(fairness_df):,}"
+            )
+
+            fairness_col2.metric(
+                "Overall Churn Rate",
+                f"{overall_churn_rate:.2f}%"
+            )
+
+            for audit_name, audit_data in fairness_results.items():
+                st.subheader(audit_name)
+
+                metric_col1, metric_col2 = st.columns(2)
+
+                with metric_col1:
+                    st.write("Group Churn Metrics")
+
+                    st.dataframe(
+                        audit_data["group_metrics"].round(3),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                with metric_col2:
+                    st.write("Churn Rate Ratios")
+
+                    st.dataframe(
+                        audit_data["rate_ratios"].round(3),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+        except Exception as error:
+            st.error(
+                f"Unable to generate fairness audit: {error}"
+            )
 
 
 dashboard()
