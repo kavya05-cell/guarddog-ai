@@ -610,4 +610,44 @@ GuardDog AI is a monitoring and decision-support system. Its outputs must be int
 - Isolation Forest identifies unusual flows, not confirmed attacks.
 - Network drift does not establish malicious activity.
 - The current network monitoring pipeline does not establish whether model detection performance has degraded.
--
+- Network anomaly detection depends on the quality and representativeness of the training data.
+
+### Fairness monitoring limitations
+
+The Telco outcome disparity audit compares observed churn outcomes across demographic groups.
+
+It should not be interpreted as a complete fairness evaluation of model predictions.
+
+### 15. Future Scope
+
+Potential improvements include:
+
+- Model performance monitoring using labeled feedback.
+
+- Concept drift detection.
+
+- Adaptive anomaly detection.
+
+- Multivariate drift detection.
+
+- Advanced network intrusion detection models.
+
+- Alert severity prioritization.
+
+- Automated model-health reporting.
+
+- Advanced fairness metrics.
+
+- Cloud deployment.
+
+- More extensive benchmark evaluation.
+
+These are possible extensions and are not claimed as completed features.
+
+### 16. Project Objective
+
+GuardDog AI aims to make monitoring more continuous and interpretable.
+
+Rather than relying exclusively on historical model evaluation, it provides visibility into incoming data distributions and unusual network behaviour.
+
+The central idea is simple: monitor what is happening after deployment, not just what happened during training.
