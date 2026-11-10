@@ -73,3 +73,31 @@ def test_excluded_churn_value_is_not_analyzed():
 
     assert "Churn Value" not in results["numerical"]
     assert "Churn Value" not in results["categorical"]
+
+
+def test_constant_reference_with_shifted_current_data_detects_drift():
+    reference = pd.DataFrame({
+        "Network Bytes": [5.0] * 100
+    })
+
+    current = pd.DataFrame({
+        "Network Bytes": [10.0] * 100
+    })
+
+    results = detect_drift(reference, current)
+
+    assert results["numerical"]["Network Bytes"]["ks"]["status"] == "alert"
+    assert results["numerical"]["Network Bytes"]["psi"]["status"] == "alert"
+
+def test_sparse_categorical_distribution_is_unavailable():
+    reference = pd.DataFrame({
+        "Protocol": ["TCP"] * 99 + ["RARE"]
+    })
+
+    current = pd.DataFrame({
+        "Protocol": ["TCP"] * 99 + ["NEW"]
+    })
+
+    results = detect_drift(reference, current)
+
+    assert results["categorical"]["Protocol"]["chi_square"]["status"] == "unavailable"

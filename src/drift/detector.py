@@ -59,8 +59,15 @@ def ks_test(reference, current):
 def create_psi_bins(reference, bins=10):
     reference = pd.to_numeric(reference, errors="coerce").dropna()
 
-    if reference.empty or reference.nunique() < 2:
+    if reference.empty:
         return None
+
+    if reference.nunique() == 1:
+        return [
+            -np.inf,
+            float(reference.iloc[0]),
+            np.inf
+        ]
 
     quantiles = reference.quantile(
         [i / bins for i in range(bins + 1)]
@@ -190,14 +197,20 @@ def chi_square_test(reference, current):
             "status": "unavailable"
         }
 
-    statistic, p_value, _, _ = chi2_contingency(table)
+    statistic, p_value, _, expected = chi2_contingency(table)
+
+    if (expected < 1).any() or (expected < 5).mean() > 0.20:
+        return {
+            "statistic": None,
+            "p_value": None,
+            "status": "unavailable"
+        }
 
     return {
         "statistic": float(statistic),
         "p_value": float(p_value),
         "status": _status_from_p_value(p_value)
     }
-
 
 def detect_drift(reference_df, current_df):
     results = {

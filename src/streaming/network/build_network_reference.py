@@ -8,8 +8,10 @@ from src.streaming.network.network_anomaly_detector import (
     extract_features
 )
 
-FLOW_LOG_PATH = Path("data/processed/network_flows.jsonl")
-REFERENCE_PATH = Path("data/processed/network_reference.csv")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+FLOW_LOG_PATH = PROJECT_ROOT / "data" / "processed" / "network_flows.jsonl"
+REFERENCE_PATH = PROJECT_ROOT / "data" / "processed" / "network_reference.csv"
 
 
 def main():
@@ -25,32 +27,55 @@ def main():
             if not line.strip():
                 continue
 
-            flow = json.loads(line)
-            features = extract_features(flow)
-            features["protocol"] = flow.get("protocol", "OTHER")
-            records.append(features)
+            try:
+                flow = json.loads(line)
+
+                features = extract_features(flow)
+                features["protocol"] = flow.get("protocol", "OTHER")
+
+                records.append(features)
+
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
 
     if len(records) < 100:
         raise ValueError(
-            "At least 100 historical network flows are required."
+            f"At least 100 valid network flows are required. "
+            f"Found {len(records)}."
         )
 
     columns = list(FEATURE_COLUMNS) + ["protocol"]
-    reference_df = pd.DataFrame(records)
 
+    reference_df = pd.DataFrame(records)
     reference_df = reference_df.reindex(columns=columns)
-    reference_df = reference_df.dropna(subset=list(FEATURE_COLUMNS))
+
+    reference_df = reference_df.replace(
+        [float("inf"), float("-inf")],
+        float("nan")
+    )
+
+    reference_df = reference_df.dropna(
+        subset=list(FEATURE_COLUMNS)
+    )
 
     if len(reference_df) < 100:
         raise ValueError(
             "Not enough valid historical flows to build a reference."
         )
 
-    REFERENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    reference_df.to_csv(REFERENCE_PATH, index=False)
+    REFERENCE_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    reference_df.to_csv(
+        REFERENCE_PATH,
+        index=False
+    )
 
     print(f"Reference dataset created: {REFERENCE_PATH}")
     print(f"Reference flows: {len(reference_df)}")
+    print(f"Reference features: {len(columns)}")
 
 
 if __name__ == "__main__":

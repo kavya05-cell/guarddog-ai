@@ -71,3 +71,40 @@ def test_feature_frame_handles_multiple_flows():
     assert isinstance(frame, pd.DataFrame)
     assert len(frame) == 2
     assert frame["total_packets"].tolist() == [5.0, 10.0]
+
+def test_extract_features_handles_nan():
+    flow = {
+        "flow_duration": float("nan"),
+        "total_packets": 10
+    }
+
+    features = extract_features(flow)
+
+    assert features["flow_duration"] == 0.0
+    assert features["total_packets"] == 10.0
+
+
+def test_extract_features_handles_infinity():
+    flow = {
+        "flow_duration": float("inf"),
+        "total_packets": float("-inf")
+    }
+
+    features = extract_features(flow)
+
+    assert features["flow_duration"] == 0.0
+    assert features["total_packets"] == 0.0
+
+
+def test_extract_features_handles_invalid_numeric_values():
+    flow = {
+        "flow_duration": "invalid",
+        "total_packets": None,
+        "total_bytes": 500
+    }
+
+    features = extract_features(flow)
+
+    assert features["flow_duration"] == 0.0
+    assert features["total_packets"] == 0.0
+    assert features["total_bytes"] == 500.0

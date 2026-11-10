@@ -8,8 +8,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, RobustScaler
 
-from network_anomaly_detector import FEATURE_COLUMNS, prepare_feature_frame
-
+from src.streaming.network.network_anomaly_detector import FEATURE_COLUMNS, prepare_feature_frame
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "network_flows.jsonl"
 MODEL_PATH = PROJECT_ROOT / "models" / "network" / "isolation_forest_log_experiment.joblib"

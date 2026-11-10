@@ -8,9 +8,13 @@ from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
 
-from network_anomaly_detector import FEATURE_COLUMNS, prepare_feature_frame
+from src.streaming.network.network_anomaly_detector import (
+    FEATURE_COLUMNS,
+    prepare_feature_frame
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "network_flows.jsonl"
 MODEL_PATH = PROJECT_ROOT / "models" / "network" / "isolation_forest_baseline.joblib"
 REPORT_PATH = PROJECT_ROOT / "data" / "processed" / "network_baseline_report.json"
@@ -18,16 +22,25 @@ REPORT_PATH = PROJECT_ROOT / "data" / "processed" / "network_baseline_report.jso
 
 def main():
     if not DATA_PATH.exists():
-        raise FileNotFoundError(f"Network flow data not found: {DATA_PATH}")
+        raise FileNotFoundError(
+            f"Network flow data not found: {DATA_PATH}"
+        )
 
     df = pd.read_json(DATA_PATH, lines=True)
 
     if len(df) < 100:
-        raise ValueError(f"At least 100 flows are required. Found {len(df)}.")
+        raise ValueError(
+            f"At least 100 flows are required. Found {len(df)}."
+        )
 
-    features = prepare_feature_frame(df.to_dict(orient="records"))
+    features = prepare_feature_frame(
+        df.to_dict(orient="records")
+    )
 
-    features = features.replace([np.inf, -np.inf], np.nan).fillna(0)
+    features = features.replace(
+        [np.inf, -np.inf],
+        np.nan
+    ).fillna(0)
 
     model = Pipeline([
         ("scaler", RobustScaler()),
@@ -59,7 +72,8 @@ def main():
         "normal_flows": normal_count,
         "anomalous_flows": anomaly_count,
         "anomaly_percentage": round(
-            anomaly_count / len(features) * 100, 2
+            anomaly_count / len(features) * 100,
+            2
         ),
         "score_min": float(anomaly_scores.min()),
         "score_max": float(anomaly_scores.max()),

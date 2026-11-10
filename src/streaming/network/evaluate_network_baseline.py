@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import joblib
 import pandas as pd
-from network_anomaly_detector import prepare_feature_frame
+from src.streaming.network.network_anomaly_detector import prepare_feature_frame
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MODEL_PATH = PROJECT_ROOT / "models" / "network" / "isolation_forest_baseline.joblib"
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "network_flows.jsonl"

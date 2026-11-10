@@ -6,3 +6,6 @@ streamlit
 plotly
 reportlab
 kafka-python
+scapy
+python-dotenv
+joblib

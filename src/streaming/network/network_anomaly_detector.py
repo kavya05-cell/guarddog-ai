@@ -1,4 +1,4 @@
-
+import math
 import pandas as pd
 
 FEATURE_COLUMNS = [
@@ -21,8 +21,9 @@ def extract_features(flow):
         value = flow.get(column, 0)
 
         try:
-            features[column] = float(value)
-        except (TypeError, ValueError):
+            numeric_value = float(value)
+            features[column] = numeric_value if math.isfinite(numeric_value) else 0.0
+        except (TypeError, ValueError, OverflowError):
             features[column] = 0.0
 
     return features

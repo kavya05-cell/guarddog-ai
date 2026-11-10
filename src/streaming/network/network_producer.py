@@ -2,14 +2,16 @@ import argparse
 import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
-from kafka import KafkaProducer
 from scapy.all import IP, IPv6, TCP, UDP, ICMP, sniff
 
 KAFKA_SERVER = "localhost:9092"
 TOPIC_NAME = "guarddog-network-live"
 FLOW_TIMEOUT = 5
 CLEANUP_INTERVAL = 1
+
+DEFAULT_OUTPUT_PATH = Path("data/processed/network_flows.jsonl")
 
 flows = {}
 
@@ -92,6 +94,7 @@ def process_packet(packet):
         }
 
     flow = flows[key]
+
     flow["first_seen"] = min(flow["first_seen"], timestamp)
     flow["last_seen"] = max(flow["last_seen"], timestamp)
     flow["last_activity"] = time.monotonic()
@@ -132,7 +135,7 @@ def build_flow_record(flow):
     }
 
 
-def publish_flow(producer, key):
+def publish_flow(producer, key, output_file=None):
     flow = flows.pop(key, None)
 
     if flow is None:
@@ -140,20 +143,33 @@ def publish_flow(producer, key):
 
     record = build_flow_record(flow)
 
-    producer.send(TOPIC_NAME, value=record)
-    producer.flush()
+    if output_file is not None:
+        output_file.write(json.dumps(record) + "\n")
+        output_file.flush()
 
-    print(
-        f"Published flow: {record['protocol']} "
-        f"{record['src_ip']}:{record['src_port']} -> "
-        f"{record['dst_ip']}:{record['dst_port']} "
-        f"| packets={record['total_packets']} "
-        f"| bytes={record['total_bytes']}",
-        flush=True
-    )
+        print(
+            f"Saved baseline flow: {record['protocol']} "
+            f"{record['src_ip']}:{record['src_port']} -> "
+            f"{record['dst_ip']}:{record['dst_port']} "
+            f"| packets={record['total_packets']} "
+            f"| bytes={record['total_bytes']}",
+            flush=True
+        )
+    else:
+        producer.send(TOPIC_NAME, value=record)
+        producer.flush()
+
+        print(
+            f"Published flow: {record['protocol']} "
+            f"{record['src_ip']}:{record['src_port']} -> "
+            f"{record['dst_ip']}:{record['dst_port']} "
+            f"| packets={record['total_packets']} "
+            f"| bytes={record['total_bytes']}",
+            flush=True
+        )
 
 
-def expire_flows(producer):
+def expire_flows(producer, output_file=None):
     now = time.monotonic()
 
     expired = [
@@ -162,19 +178,63 @@ def expire_flows(producer):
     ]
 
     for key in expired:
-        publish_flow(producer, key)
+        publish_flow(producer, key, output_file)
 
 
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument("--interface", required=True)
     parser.add_argument("--duration", type=int, default=0)
+    parser.add_argument(
+        "--mode",
+        choices=["live", "baseline"],
+        default="live"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT_PATH
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true"
+    )
+
     args = parser.parse_args()
 
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_SERVER,
-        value_serializer=lambda value: json.dumps(value).encode("utf-8")
-    )
+    if args.duration < 0:
+        parser.error("--duration cannot be negative")
+
+    if args.mode == "baseline" and args.duration <= 0:
+        parser.error("Baseline mode requires a positive --duration")
+
+    producer = None
+    output_file = None
+
+    if args.mode == "baseline":
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+
+        file_mode = "a" if args.append else "w"
+
+        output_file = args.output.open(
+            file_mode,
+            encoding="utf-8"
+        )
+
+        print("Starting network baseline collection.", flush=True)
+        print(f"Output file: {args.output}", flush=True)
+        print(f"Collection duration: {args.duration} seconds", flush=True)
+
+    else:
+        from kafka import KafkaProducer
+
+        producer = KafkaProducer(
+            bootstrap_servers=KAFKA_SERVER,
+            value_serializer=lambda value: json.dumps(value).encode("utf-8")
+        )
+
+        print(f"Publishing to Kafka topic: {TOPIC_NAME}", flush=True)
 
     start_time = time.monotonic()
     last_cleanup = start_time
@@ -183,7 +243,6 @@ def main():
         process_packet(packet)
 
     print(f"Capturing on interface: {args.interface}", flush=True)
-    print(f"Publishing to Kafka topic: {TOPIC_NAME}", flush=True)
     print("Press Ctrl+C to stop.", flush=True)
 
     try:
@@ -199,7 +258,7 @@ def main():
             now = time.monotonic()
 
             if now - last_cleanup >= CLEANUP_INTERVAL:
-                expire_flows(producer)
+                expire_flows(producer, output_file)
                 last_cleanup = now
 
             if args.duration > 0 and now - start_time >= args.duration:
@@ -207,12 +266,19 @@ def main():
 
     except KeyboardInterrupt:
         print("Stopping capture.", flush=True)
+
     finally:
         for key in list(flows):
-            publish_flow(producer, key)
+            publish_flow(producer, key, output_file)
 
-        producer.flush()
-        producer.close()
+        if producer is not None:
+            producer.flush()
+            producer.close()
+
+        if output_file is not None:
+            output_file.close()
+
+        print("Network capture completed.", flush=True)
 
 
 if __name__ == "__main__":
