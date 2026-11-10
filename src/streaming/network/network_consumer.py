@@ -8,7 +8,14 @@ import joblib
 import pandas as pd
 from kafka import KafkaConsumer
 
-from network_anomaly_detector import FEATURE_COLUMNS, extract_features
+from src.streaming.network.network_anomaly_detector import (
+    FEATURE_COLUMNS,
+    extract_features
+)
+from src.streaming.network.network_drift import (
+    DRIFT_BATCH_SIZE,
+    evaluate_network_batch
+)
 
 KAFKA_SERVER = "localhost:9092"
 TOPIC_NAME = "guarddog-network-live"
@@ -16,6 +23,7 @@ OUTPUT_PATH = Path("data/processed/network_traffic_summary.json")
 FLOW_LOG_PATH = Path("data/processed/network_flows.jsonl")
 ALERT_LOG_PATH = Path("data/processed/network_anomaly_alerts.jsonl")
 MODEL_PATH = Path("models/network/isolation_forest_baseline.joblib")
+REFERENCE_PATH = Path("data/processed/network_reference.csv")
 GROUP_ID = "guarddog-network-analysis-v1"
 
 
@@ -23,7 +31,9 @@ def append_json_line(path, record):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        file.write(
+            json.dumps(record, ensure_ascii=False, default=str) + "\n"
+        )
 
 
 def create_summary():
@@ -51,10 +61,12 @@ def update_summary(summary, flow, prediction, anomaly_score):
         summary["anomalous_flows"] += 1
 
     source_ip = flow.get("src_ip")
+
     if source_ip:
         summary["source_ip_counts"][source_ip] += 1
 
     destination_port = flow.get("dst_port")
+
     if destination_port is not None:
         summary["destination_port_counts"][str(destination_port)] += 1
 
@@ -111,6 +123,7 @@ def save_summary(summary):
 
 def score_flow(model, flow):
     feature_record = extract_features(flow)
+
     feature_frame = pd.DataFrame(
         [feature_record],
         columns=FEATURE_COLUMNS
@@ -128,6 +141,12 @@ def main():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
 
+    if not REFERENCE_PATH.exists():
+        raise FileNotFoundError(
+            f"Network reference not found: {REFERENCE_PATH}. "
+            "Run build_network_reference.py first."
+        )
+
     model = joblib.load(MODEL_PATH)
 
     consumer = KafkaConsumer(
@@ -140,11 +159,15 @@ def main():
     )
 
     summary = create_summary()
+    drift_batch = []
+    batch_number = 0
 
     print(f"Reading network flows from {TOPIC_NAME}", flush=True)
     print(f"Loaded model from {MODEL_PATH}", flush=True)
+    print(f"Using reference dataset: {REFERENCE_PATH}", flush=True)
     print(f"Writing summary to {OUTPUT_PATH}", flush=True)
     print(f"Writing anomaly alerts to {ALERT_LOG_PATH}", flush=True)
+    print(f"Drift evaluation batch size: {DRIFT_BATCH_SIZE}", flush=True)
     print("Press Ctrl+C to stop.", flush=True)
 
     try:
@@ -169,7 +192,9 @@ def main():
                 flow,
                 prediction,
                 anomaly_score
-       )
+            )
+
+            drift_batch.append(flow)
 
             if prediction == "anomaly":
                 alert = {
@@ -196,6 +221,23 @@ def main():
                     flush=True
                 )
 
+            if len(drift_batch) >= DRIFT_BATCH_SIZE:
+                batch_number += 1
+
+                drift_report = evaluate_network_batch(
+                    drift_batch,
+                    batch_number
+                )
+
+                print(
+                    f"DRIFT | Batch: {batch_number} | "
+                    f"Status: {drift_report['overall_status']} | "
+                    f"Flows: {len(drift_batch)}",
+                    flush=True
+                )
+
+                drift_batch.clear()
+
             save_summary(summary)
 
             print(
@@ -209,7 +251,20 @@ def main():
 
     except KeyboardInterrupt:
         print("Stopping network analysis consumer.", flush=True)
+
     finally:
+        if drift_batch:
+            batch_number += 1
+            drift_report = evaluate_network_batch(
+                drift_batch,
+                batch_number
+            )
+            print(
+                f"Final drift batch status: "
+                f"{drift_report['overall_status']}",
+                flush=True
+            )
+
         save_summary(summary)
         consumer.close()
 
