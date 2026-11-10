@@ -620,38 +620,29 @@ It should not be interpreted as a complete fairness evaluation of model predicti
 
 ---
 
-### 15. Future Scope
+## 15. Future Scope
 
 Potential improvements include:
 
 - Model performance monitoring using labeled feedback.
-
 - Concept drift detection.
-
 - Adaptive anomaly detection.
-
 - Multivariate drift detection.
-
 - Advanced network intrusion detection models.
-
 - Alert severity prioritization.
-
 - Automated model-health reporting.
-
 - Advanced fairness metrics.
-
 - Cloud deployment.
-
 - More extensive benchmark evaluation.
 
 These are possible extensions and are not claimed as completed features.
 
 ---
 
-### 16. Project Objective
+## 16. Project Objective
 
 GuardDog AI aims to make monitoring more continuous and interpretable.
 
 Rather than relying exclusively on historical model evaluation, it provides visibility into incoming data distributions and unusual network behaviour.
 
-The central idea is simple: monitor what is happening after deployment, not just what happened during training.
+**The central idea is simple: monitor what is happening after deployment, not just what happened during training.**
