@@ -52,3 +52,5 @@ reports/generated/
 
 # Generated project outputs
 data/processed/*.json
+data/processed/*.jsonl
+data/processed/*.pdf
