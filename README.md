@@ -618,6 +618,8 @@ The Telco outcome disparity audit compares observed churn outcomes across demogr
 
 It should not be interpreted as a complete fairness evaluation of model predictions.
 
+---
+
 ### 15. Future Scope
 
 Potential improvements include:
@@ -643,6 +645,8 @@ Potential improvements include:
 - More extensive benchmark evaluation.
 
 These are possible extensions and are not claimed as completed features.
+
+---
 
 ### 16. Project Objective
 
