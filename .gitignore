@@ -54,3 +54,4 @@ reports/generated/
 data/processed/*.json
 data/processed/*.jsonl
 data/processed/*.pdf
+data/processed/*.bak
